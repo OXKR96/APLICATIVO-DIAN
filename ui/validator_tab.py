@@ -255,11 +255,11 @@ class ValidatorTab(QWidget):
                 "Rete IVA",
                 "Rete ICA"
             ],
-            'compra': [
-                "Nombre del Comprador",
+            'credito': [  # Añadir mapeo específico para notas crédito
+                "Nombre del Vendedor",
                 "Tipo Documento",
                 "Prefijo",
-                "NIT Vendedor",
+                "Documento Comprador",
                 "Fecha",
                 "Indicador IVA",
                 "Concepto",
@@ -280,7 +280,32 @@ class ValidatorTab(QWidget):
                 "Rete IVA",
                 "Rete ICA"
             ],
-            'inventario': [
+            'debito': [  # Añadir mapeo específico para notas débito
+                "Nombre del Vendedor",
+                "Tipo Documento",
+                "Prefijo",
+                "Documento Comprador",
+                "Fecha",
+                "Indicador IVA",
+                "Concepto",
+                "Cantidad",
+                "Unidad Medida",
+                "Base Gravable",
+                "Porcentaje IVA",
+                "NIT",
+                "Número Factura",
+                "Fecha Factura",
+                "Número Control",
+                "Total IVA",
+                "Total INC",
+                "Total Bolsas",
+                "Otros Impuestos",
+                "ICUI",
+                "Rete Fuente",
+                "Rete IVA",
+                "Rete ICA"
+            ],
+            'inventario': [  # Restaurar headers de inventario
                 "NIT Comprador",
                 "Nombre Comprador",
                 "NIT Vendedor", 
@@ -301,7 +326,7 @@ class ValidatorTab(QWidget):
                 "Precio_venta",
                 "Base_gravable"
             ],
-            'descuentos': [
+            'descuentos': [  # Restaurar headers de descuentos
                 "datos del comprador",
                 "tipo de factura",
                 "en blanco",
@@ -427,7 +452,6 @@ class ValidatorTab(QWidget):
                                 if rows:
                                     self.processed_data['compra'].extend(rows)
                                     processed += 1
-                                    # Actualizar tabla de compras inmediatamente
                                     self.update_single_table('compra')
                                 if inventario:
                                     self.processed_data['inventario'].extend(inventario)
@@ -439,9 +463,11 @@ class ValidatorTab(QWidget):
                             rows = processor(filepath)
                             if rows:
                                 key = self.type_to_key.get(doc_type)
-                                self.processed_data[key].extend(rows)
-                                processed += 1
-                                self.update_single_table(key)
+                                if key:  # Asegurarse de que existe la clave
+                                    self.processed_data[key].extend(rows)
+                                    processed += 1
+                                    self.update_single_table(key)
+                                    print(f"Datos procesados para {key}: {len(rows)} filas")  # Debug
                 
                 except Exception as e:
                     errors += 1
@@ -474,7 +500,6 @@ class ValidatorTab(QWidget):
             )
 
     def update_single_table(self, data_type):
-        """Actualiza una tabla específica"""
         try:
             if data_type not in self.tables:
                 print(f"Tabla {data_type} no encontrada")
@@ -487,25 +512,26 @@ class ValidatorTab(QWidget):
             print(f"Datos disponibles: {len(data_list)}")
             
             if not data_list:
-                print(f"No hay datos para la tabla {data_type}")
                 table.setRowCount(0)
                 return
             
             # Configurar el número de filas
             table.setRowCount(len(data_list))
             
+            # Obtener los headers correctos para este tipo
+            headers = self.column_headers.get(data_type, self.column_headers['venta'])
+            
             # Llenar la tabla según el tipo
-            if data_type in ['venta', 'compra', 'credito', 'debito']:
-                # Usar letras para estos tipos
-                for row_idx, row_data in enumerate(data_list):
-                    for col_idx, header in enumerate(self.column_headers.get(data_type, [])):
-                        value = str(row_data.get(chr(65 + col_idx), ''))
+            for row_idx, row_data in enumerate(data_list):
+                if data_type in ['venta', 'compra', 'credito', 'debito']:
+                    # Usar letras para estos tipos
+                    for col_idx, _ in enumerate(headers):
+                        letra = chr(65 + col_idx)
+                        value = str(row_data.get(letra, ''))
                         item = QTableWidgetItem(value)
                         table.setItem(row_idx, col_idx, item)
-            else:
-                # Usar nombres de columnas para inventario y otros
-                headers = self.column_headers.get(data_type, [])
-                for row_idx, row_data in enumerate(data_list):
+                else:
+                    # Usar nombres de columnas para inventario y descuentos
                     for col_idx, header in enumerate(headers):
                         value = str(row_data.get(header, ''))
                         item = QTableWidgetItem(value)

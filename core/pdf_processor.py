@@ -506,27 +506,168 @@ def process_factura_compra(pdf_path):
         traceback.print_exc()
         return None, None, None
 
-# Funciones similares para los otros tipos de documentos
 def process_nota_credito(pdf_path):
     """Procesa una nota crédito"""
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            # Lógica similar a process_factura_venta pero con tipo_documento="Nota Crédito"
-            # ...
-            pass
+            first_page = pdf.pages[0]
+            text = first_page.extract_text()
+            
+            # Extraer campos básicos
+            nombre_vendedor = extract_field(text, "Razón Social:", "Nombre Comercial:")
+            
+            # Intentar diferentes patrones para el documento del comprador
+            documento_comprador = None
+            if "Número de Documento:" in text:
+                documento_comprador = extract_field(text, "Número de Documento:", "Departamento:")
+            elif "Número Documento:" in text:
+                documento_comprador = extract_field(text, "Número Documento:", "Departamento:")
+            
+            fecha_emision = extract_field(text, "Fecha de Emisión:", "Medio de Pago:")
+            numero_factura = extract_field(text, "Número de Factura:", "Forma de pago:")
+            
+            impuestos = extract_total_impuestos(pdf)
+            
+            # Diccionario para agrupar bases gravables por porcentaje de IVA
+            bases_por_iva = defaultdict(float)
+            
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if not row or len(row) < 11:
+                            continue
+                        
+                        row = [str(cell).strip() if cell is not None else '' for cell in row]
+                        if row[0].strip().isdigit():
+                            try:
+                                # Extraer valores de la fila
+                                precio_unitario = parse_colombian_number(row[5])
+                                cantidad = parse_colombian_number(row[4])
+                                descuento = parse_colombian_number(row[6]) if row[6].strip() else 0.0
+                                iva_pesos = parse_colombian_number(row[8]) if row[8].strip() else 0.0
+                                iva_percent = float(row[9].replace(',', '.')) if row[9].strip() else 0.0
+                                precio_unitario_venta = parse_colombian_number(row[12])
+                                
+                                # Calcular base gravable
+                                base_gravable = calcular_base_gravable(
+                                    precio_unitario, 
+                                    cantidad, 
+                                    descuento, 
+                                    iva_pesos, 
+                                    precio_unitario_venta
+                                )
+                                
+                                # Agrupar por porcentaje de IVA
+                                bases_por_iva[iva_percent] += base_gravable
+                                
+                            except Exception as e:
+                                print(f"Error procesando fila: {str(e)}")
+                                continue
+            
+            # Crear una fila por cada porcentaje de IVA único
+            rows = []
+            for iva_percent, base_total in bases_por_iva.items():
+                new_row = create_base_row(
+                    emisor=nombre_vendedor,
+                    tipo_documento="Nota Crédito",  # Cambiado a Nota Crédito
+                    numero_documento=documento_comprador,
+                    fecha_emision=fecha_emision,
+                    numero_factura=numero_factura,
+                    iva_percent=iva_percent,
+                    base_iva=round(base_total, 2),
+                    impuestos=impuestos,
+                    indicador_iva=get_iva_indicator(iva_percent)
+                )
+                rows.append(new_row)
+            
+            return rows
+            
     except Exception as e:
         print(f"Error procesando nota crédito: {str(e)}")
+        traceback.print_exc()
         return None
 
 def process_nota_debito(pdf_path):
     """Procesa una nota débito"""
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            # Lógica similar a process_factura_venta pero con tipo_documento="Nota Débito"
-            # ...
-            pass
+            first_page = pdf.pages[0]
+            text = first_page.extract_text()
+            
+            # Extraer campos básicos
+            nombre_vendedor = extract_field(text, "Razón Social:", "Nombre Comercial:")
+            
+            # Intentar diferentes patrones para el documento del comprador
+            documento_comprador = None
+            if "Número de Documento:" in text:
+                documento_comprador = extract_field(text, "Número de Documento:", "Departamento:")
+            elif "Número Documento:" in text:
+                documento_comprador = extract_field(text, "Número Documento:", "Departamento:")
+            
+            fecha_emision = extract_field(text, "Fecha de Emisión:", "Medio de Pago:")
+            numero_factura = extract_field(text, "Número de Factura:", "Forma de pago:")
+            
+            impuestos = extract_total_impuestos(pdf)
+            
+            # Diccionario para agrupar bases gravables por porcentaje de IVA
+            bases_por_iva = defaultdict(float)
+            
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if not row or len(row) < 11:
+                            continue
+                        
+                        row = [str(cell).strip() if cell is not None else '' for cell in row]
+                        if row[0].strip().isdigit():
+                            try:
+                                # Extraer valores de la fila
+                                precio_unitario = parse_colombian_number(row[5])
+                                cantidad = parse_colombian_number(row[4])
+                                descuento = parse_colombian_number(row[6]) if row[6].strip() else 0.0
+                                iva_pesos = parse_colombian_number(row[8]) if row[8].strip() else 0.0
+                                iva_percent = float(row[9].replace(',', '.')) if row[9].strip() else 0.0
+                                precio_unitario_venta = parse_colombian_number(row[12])
+                                
+                                # Calcular base gravable
+                                base_gravable = calcular_base_gravable(
+                                    precio_unitario, 
+                                    cantidad, 
+                                    descuento, 
+                                    iva_pesos, 
+                                    precio_unitario_venta
+                                )
+                                
+                                # Agrupar por porcentaje de IVA
+                                bases_por_iva[iva_percent] += base_gravable
+                                
+                            except Exception as e:
+                                print(f"Error procesando fila: {str(e)}")
+                                continue
+            
+            # Crear una fila por cada porcentaje de IVA único
+            rows = []
+            for iva_percent, base_total in bases_por_iva.items():
+                new_row = create_base_row(
+                    emisor=nombre_vendedor,
+                    tipo_documento="Nota Débito",  # Cambiado a Nota Débito
+                    numero_documento=documento_comprador,
+                    fecha_emision=fecha_emision,
+                    numero_factura=numero_factura,
+                    iva_percent=iva_percent,
+                    base_iva=round(base_total, 2),
+                    impuestos=impuestos,
+                    indicador_iva=get_iva_indicator(iva_percent)
+                )
+                rows.append(new_row)
+            
+            return rows
+            
     except Exception as e:
         print(f"Error procesando nota débito: {str(e)}")
+        traceback.print_exc()
         return None
 
 def process_facturas_compras_nuevos(pdf_path):
