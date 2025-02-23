@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                             QFileDialog, QLabel, QProgressDialog, QTableWidget,
                             QTableWidgetItem, QMessageBox, QTabWidget, QComboBox,
-                            QHeaderView)
+                            QHeaderView, QDialog, QCheckBox, QProgressBar)
 from PyQt5.QtCore import Qt
 import pandas as pd
 import os
@@ -14,13 +14,86 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                              QFileDialog, QLabel, QProgressDialog, QTableWidget,
                              QTableWidgetItem, QMessageBox, QTabWidget, QComboBox,
                              QHeaderView, QApplication)  #
+import pdfplumber
+import logging
+import time
+import traceback
+
+class ExportSelectionDialog(QDialog):
+    def __init__(self, available_tabs, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Seleccionar hojas para exportar")
+        self.selected_tabs = []
+        
+        layout = QVBoxLayout()
+        
+        # Añadir label con instrucciones
+        label = QLabel("Seleccione las hojas que desea exportar:")
+        layout.addWidget(label)
+        
+        # Crear checkboxes para cada tab
+        self.checkboxes = {}
+        for tab_name in available_tabs:
+            if tab_name.lower() != 'errores':  # Opcional: excluir la pestaña de errores
+                checkbox = QCheckBox(tab_name.capitalize())
+                self.checkboxes[tab_name] = checkbox
+                layout.addWidget(checkbox)
+        
+        # Botones de aceptar y cancelar
+        buttons_layout = QHBoxLayout()
+        accept_button = QPushButton("Exportar")
+        cancel_button = QPushButton("Cancelar")
+        
+        accept_button.clicked.connect(self.accept)
+        cancel_button.clicked.connect(self.reject)
+        
+        buttons_layout.addWidget(accept_button)
+        buttons_layout.addWidget(cancel_button)
+        layout.addLayout(buttons_layout)
+        
+        self.setLayout(layout)
+    
+    def get_selected_tabs(self):
+        return [name for name, checkbox in self.checkboxes.items() if checkbox.isChecked()]
+
 class ValidatorTab(QWidget):
     def __init__(self):
         super().__init__()
-        self.setup_ui()
         self.files_to_process = []
         self.current_type = None
+        self.processing = False
+        
+        # Inicializar componentes de UI
+        self.files_label = None
+        self.select_btn = None
+        self.doc_type_combo = None
+        self.process_btn = None
+        self.progress_bar = None
+        self.stop_button = None
+        self.tab_widget = None
+        
+        # Configurar UI
+        self.setup_ui()
         self.setup_data_containers()
+        
+        # Mapeos para procesamiento de documentos
+        self.processor_map = {
+            'Factura de Venta': process_factura_venta,
+            'Factura de Compra': process_factura_compra,
+            'Nota Crédito': process_nota_credito,
+            'Nota Débito': process_nota_debito,
+            'Facturas de Compras Nuevos': process_facturas_compras_nuevos,
+            'Facturas de Gastos': process_facturas_gastos
+        }
+        
+        self.type_to_key = {
+            'Factura de Venta': 'venta',
+            'Factura de Compra': 'compra',
+            'Nota Crédito': 'credito',
+            'Nota Débito': 'debito',
+            'Facturas de Compras Nuevos': 'compras_nuevos',
+            'Facturas de Gastos': 'gastos'
+        }
 
     def setup_data_containers(self):
         """Inicializa los contenedores de datos"""
@@ -37,9 +110,9 @@ class ValidatorTab(QWidget):
         }
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-
-        # Sección de instrucciones
+        layout = QVBoxLayout()
+        
+        # Instrucciones
         instructions = QLabel(
             "Pasos a seguir:\n"
             "1. Seleccione los archivos PDF a procesar\n"
@@ -58,8 +131,7 @@ class ValidatorTab(QWidget):
         layout.addWidget(instructions)
 
         # Panel superior
-        top_panel = QWidget()
-        top_layout = QHBoxLayout(top_panel)
+        top_panel = QHBoxLayout()
 
         # Botón seleccionar archivos
         self.select_btn = QPushButton('1. Seleccionar PDFs')
@@ -72,10 +144,6 @@ class ValidatorTab(QWidget):
                 border-radius: 4px;
                 padding: 10px 20px;
                 font-size: 14px;
-                min-width: 150px;
-            }
-            QPushButton:hover {
-                background-color: #1557b0;
             }
         """)
 
@@ -83,7 +151,6 @@ class ValidatorTab(QWidget):
         doc_type_widget = QWidget()
         doc_type_layout = QHBoxLayout(doc_type_widget)
         doc_type_label = QLabel("2. Tipo de documento:")
-        doc_type_label.setStyleSheet("font-size: 14px;")
         
         self.doc_type_combo = QComboBox()
         self.doc_type_combo.addItems([
@@ -94,16 +161,7 @@ class ValidatorTab(QWidget):
             'Facturas de Compras Nuevos',
             'Facturas de Gastos'
         ])
-        self.doc_type_combo.setStyleSheet("""
-            QComboBox {
-                padding: 5px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                min-width: 200px;
-                font-size: 14px;
-            }
-        """)
-        
+
         doc_type_layout.addWidget(doc_type_label)
         doc_type_layout.addWidget(self.doc_type_combo)
 
@@ -111,30 +169,14 @@ class ValidatorTab(QWidget):
         self.process_btn = QPushButton('3. Procesar Documentos')
         self.process_btn.clicked.connect(self.process_files)
         self.process_btn.setEnabled(False)
-        self.process_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #34a853;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
-                font-size: 14px;
-                min-width: 150px;
-            }
-            QPushButton:hover {
-                background-color: #2d8746;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-            }
-        """)
 
-        top_layout.addWidget(self.select_btn)
-        top_layout.addWidget(doc_type_widget)
-        top_layout.addWidget(self.process_btn)
-        top_layout.addStretch()
+        top_panel.addWidget(self.select_btn)
+        top_panel.addWidget(doc_type_widget)
+        top_panel.addWidget(self.process_btn)
+        
+        layout.addLayout(top_panel)
 
-        # Etiqueta de archivos seleccionados
+        # Label para archivos seleccionados
         self.files_label = QLabel('No hay archivos seleccionados')
         self.files_label.setStyleSheet("""
             QLabel {
@@ -143,63 +185,124 @@ class ValidatorTab(QWidget):
                 margin: 10px 0;
             }
         """)
-        
+        layout.addWidget(self.files_label)
+
         # TabWidget para resultados
         self.tab_widget = QTabWidget()
-        self.tab_widget.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #ccc;
-                background: white;
-            }
-            QTabBar::tab {
-                background: #f0f0f0;
-                border: 1px solid #ccc;
-                padding: 5px 10px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background: white;
-                border-bottom-color: white;
-            }
-        """)
         self.setup_tables()
+        layout.addWidget(self.tab_widget)
 
-        # Panel inferior
-        bottom_panel = QWidget()
-        bottom_layout = QHBoxLayout(bottom_panel)
-
-        self.export_btn = QPushButton('Exportar a Excel')
-        self.export_btn.clicked.connect(self.export_to_excel)
-        self.export_btn.setEnabled(False)
-        self.export_btn.setStyleSheet("""
+        # Barra de progreso y botón de cancelar
+        bottom_panel = QHBoxLayout()
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("Procesando: %p% (%v/%m archivos)")
+        self.progress_bar.hide()
+        
+        self.stop_button = QPushButton("Detener Proceso")
+        self.stop_button.clicked.connect(self.stop_processing)
+        self.stop_button.setStyleSheet("""
             QPushButton {
-                background-color: #34a853;
+                background-color: #dc3545;
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 10px 20px;
+                padding: 8px 16px;
                 font-size: 14px;
-                min-width: 150px;
             }
             QPushButton:hover {
-                background-color: #2d8746;
+                background-color: #c82333;
             }
-            QPushButton:disabled {
-                background-color: #cccccc;
+            QPushButton:pressed {
+                background-color: #bd2130;
             }
         """)
+        self.stop_button.hide()
+        
+        bottom_panel.addWidget(self.progress_bar)
+        bottom_panel.addWidget(self.stop_button)
+        
+        layout.addLayout(bottom_panel)
 
-        bottom_layout.addStretch()
-        bottom_layout.addWidget(self.export_btn)
-
-        # Agregar todo al layout principal
-        layout.addWidget(top_panel)
-        layout.addWidget(self.files_label)
-        layout.addWidget(self.tab_widget)
-        layout.addWidget(bottom_panel)
+        self.setLayout(layout)
 
     def setup_tables(self):
         """Configura las tablas para mostrar resultados"""
+        self.column_headers = {
+            'venta': [
+                "Nombre del Vendedor",
+                "Tipo Documento",
+                "Prefijo",
+                "Documento Comprador",
+                "Fecha",
+                "Indicador IVA",
+                "Concepto",
+                "Cantidad",
+                "Unidad Medida",
+                "Base Gravable",
+                "Porcentaje IVA",
+                "NIT",
+                "Número Factura",
+                "Fecha Factura",
+                "Número Control",
+                "Total IVA",
+                "Total INC",
+                "Total Bolsas",
+                "Otros Impuestos",
+                "ICUI",
+                "Rete Fuente",
+                "Rete IVA",
+                "Rete ICA"
+            ],
+            'compra': [
+                "Nombre del Comprador",
+                "Tipo Documento",
+                "Prefijo",
+                "NIT Vendedor",
+                "Fecha",
+                "Indicador IVA",
+                "Concepto",
+                "Cantidad",
+                "Unidad Medida",
+                "Base Gravable",
+                "Porcentaje IVA",
+                "NIT",
+                "Número Factura",
+                "Fecha Factura",
+                "Número Control",
+                "Total IVA",
+                "Total INC",
+                "Total Bolsas",
+                "Otros Impuestos",
+                "ICUI",
+                "Rete Fuente",
+                "Rete IVA",
+                "Rete ICA"
+            ],
+            'inventario': [
+                "NIT Comprador",
+                "Nombre Comprador",
+                "NIT Vendedor", 
+                "Forma Pago",
+                "Número Factura",
+                "Nro",
+                "Codigo",
+                "Descripcion",
+                "U/M",
+                "Cantidad",
+                "Precio_unitario",
+                "Descuento",
+                "Recargo",
+                "IVA",
+                "Porcentaje_IVA",
+                "INC",
+                "Porcentaje_INC",
+                "Precio_venta",
+                "Base_gravable"
+            ]
+        }
+
         self.tables = {
             'venta': QTableWidget(),
             'compra': QTableWidget(),
@@ -212,12 +315,21 @@ class ValidatorTab(QWidget):
             'gastos': QTableWidget()
         }
 
+        # Configurar cada tabla con sus encabezados específicos
         for name, table in self.tables.items():
+            headers = self.column_headers.get(name, self.column_headers['venta'])  # usar headers de venta por defecto
+            table.setColumnCount(len(headers))
+            table.setHorizontalHeaderLabels(headers)
+            
+            # Otras configuraciones de la tabla
             table.setSelectionBehavior(QTableWidget.SelectRows)
             table.setAlternatingRowColors(True)
+            
             header = table.horizontalHeader()
             header.setSectionResizeMode(QHeaderView.ResizeToContents)
             header.setStretchLastSection(True)
+            
+            # Estilo para la tabla y encabezados
             table.setStyleSheet("""
                 QTableWidget {
                     gridline-color: #ccc;
@@ -226,11 +338,13 @@ class ValidatorTab(QWidget):
                 }
                 QHeaderView::section {
                     background-color: #f0f0f0;
-                    padding: 4px;
+                    padding: 6px;
                     border: 1px solid #ccc;
                     font-weight: bold;
+                    font-size: 12px;
                 }
             """)
+            
             self.tab_widget.addTab(table, name.capitalize())
 
     def select_files(self):
@@ -247,187 +361,201 @@ class ValidatorTab(QWidget):
             self.files_label.setText(f'Archivos seleccionados: {len(files)}')
             self.process_btn.setEnabled(True)
 
+    def stop_processing(self):
+        """Detiene el procesamiento actual"""
+        self.processing = False
+        self.process_btn.setEnabled(True)
+        self.select_btn.setEnabled(True)
+        self.doc_type_combo.setEnabled(True)
+        self.progress_bar.hide()
+        self.stop_button.hide()
+
     def process_files(self):
-        """Procesa los archivos PDF seleccionados"""
+        """Procesa los archivos seleccionados"""
         if not self.files_to_process:
-            QMessageBox.warning(self, "Advertencia", "No hay archivos para procesar")
-            return
-
-        # Obtener el tipo de documento seleccionado
-        doc_type = self.doc_type_combo.currentText()
-        processor_map = {
-            'Factura de Venta': process_factura_venta,
-            'Factura de Compra': process_factura_compra,
-            'Nota Crédito': process_nota_credito,
-            'Nota Débito': process_nota_debito,
-            'Facturas de Compras Nuevos': process_facturas_compras_nuevos,
-            'Facturas de Gastos': process_facturas_gastos
-        }
-
-        processor = processor_map.get(doc_type)
-        if not processor:
-            QMessageBox.warning(self, "Error", "Tipo de documento no válido")
-            return
-
-        # Configurar barra de progreso
-        progress = QProgressDialog("Procesando documentos...", "Cancelar", 0, len(self.files_to_process), self)
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setWindowTitle("Procesando")
-        progress.setMinimumDuration(0)
-        progress.setMinimumWidth(400)
-
-        processed = 0
-        errors = 0
-
-        # Mapeo de tipos de documento a claves de processed_data
-        type_to_key = {
-            'Factura de Venta': 'venta',
-            'Factura de Compra': 'compra',
-            'Nota Crédito': 'credito',
-            'Nota Débito': 'debito',
-            'Facturas de Compras Nuevos': 'compras_nuevos',
-            'Facturas de Gastos': 'gastos'
-        }
-
-        # Procesar cada archivo
-        for i, filepath in enumerate(self.files_to_process):
-            if progress.wasCanceled():
-                break
-
-            progress.setValue(i)
-            filename = os.path.basename(filepath)
-            progress.setLabelText(f"Procesando {i+1} de {len(self.files_to_process)}: {filename}")
-
-            try:
-                # Procesamiento basado en el tipo de documento
-                if doc_type == 'Factura de Compra':
-                    rows, descuentos = processor(filepath)
-                    inventory_items = process_inventory(filepath)
-                    
-                    if rows:
-                        self.processed_data['compra'].extend(rows)
-                        if descuentos:
-                            self.processed_data['descuentos'].extend(descuentos)
-                        if inventory_items:
-                            self.processed_data['inventario'].extend(inventory_items)
-                        processed += 1
-                    else:
-                        self.processed_data['errores'].append({
-                            'Archivo': filename,
-                            'Tipo': doc_type,
-                            'Error': 'No se pudo procesar'
-                        })
-                        errors += 1
-                else:
-                    # Para todos los demás tipos de documento
-                    rows = processor(filepath)
-                    if rows:
-                        # Usar el mapeo de tipos a claves
-                        key = type_to_key.get(doc_type)
-                        if key:
-                            self.processed_data[key].extend(rows)
-                            processed += 1
-                        else:
-                            self.processed_data['errores'].append({
-                                'Archivo': filename,
-                                'Tipo': doc_type,
-                                'Error': 'Tipo de documento no reconocido'
-                            })
-                            errors += 1
-                    else:
-                        self.processed_data['errores'].append({
-                            'Archivo': filename,
-                            'Tipo': doc_type,
-                            'Error': 'No se pudo procesar'
-                        })
-                        errors += 1
-
-            except Exception as e:
-                self.processed_data['errores'].append({
-                    'Archivo': filename,
-                    'Tipo': doc_type,
-                    'Error': str(e)
-                })
-                errors += 1
-                import traceback
-                traceback.print_exc()  # Imprimir el traceback completo
-
-            # Actualizar progreso después de cada archivo
-            QApplication.processEvents()
-
-        progress.setValue(len(self.files_to_process))
-        
-        # Actualizar tablas y habilitar exportación
-        self.update_tables()
-        self.export_btn.setEnabled(True)
-        
-        # Mostrar resumen
-        QMessageBox.information(self, "Completado", 
-            f"Proceso finalizado:\n"
-            f"Total archivos: {len(self.files_to_process)}\n"
-            f"Procesados exitosamente: {processed}\n"
-            f"Errores: {errors}"
-        )
-
-    def update_tables(self):
-        """Actualiza las tablas con los datos procesados"""
-        for data_type, data in self.processed_data.items():
-            if data:
-                table = self.tables[data_type]
-                
-                # Usar los headers definidos en el procesador
-                headers = list(COLUMN_HEADERS.values())
-                
-                # Configurar tabla
-                table.setColumnCount(len(headers))
-                table.setHorizontalHeaderLabels(headers)
-                table.setRowCount(len(data))
-                
-                for i, row in enumerate(data):
-                    # Convertir el diccionario de datos a un formato que coincida con los headers
-                    for j, (letra, nombre) in enumerate(COLUMN_HEADERS.items()):
-                        if letra == 'T':  # Para la columna ICUI
-                            value = str(row.get('ICUI', row.get('T', '0.0')))
-                        else:
-                            value = str(row.get(letra, '0.0'))
-                        item = QTableWidgetItem(value)
-                        table.setItem(i, j, item)
-                
-                table.resizeColumnsToContents()
-        
-    def export_to_excel(self):
-        """Exporta los datos procesados a Excel"""
-        if not any(self.processed_data.values()):
-            QMessageBox.warning(self, "Advertencia", "No hay datos para exportar")
+            QMessageBox.warning(self, "Error", "No hay archivos seleccionados")
             return
             
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Guardar Excel",
-            "",
-            "Excel Files (*.xlsx)"
-        )
+        # Iniciar procesamiento
+        self.processing = True
+        self.process_btn.setEnabled(False)
+        self.select_btn.setEnabled(False)
+        self.doc_type_combo.setEnabled(False)
         
-        if file_path:
-            try:
-                headers = [
-                    "Razón Social", "Tipo Documento", "Prefijo", "Número Documento",
-                    "Fecha", "Indicador IVA", "Concepto", "Cantidad", "Unidad Medida",
-                    "Base Gravable", "Porcentaje IVA", "NIT", "Número Factura",
-                    "Fecha Factura", "Número Control", "Total IVA", "Total INC",
-                    "Total Bolsas", "Otros Impuestos", "ICUI", "Rete Fuente",
-                    "Rete IVA", "Rete ICA"
-                ]
+        # Mostrar barra de progreso y botón de detener
+        self.progress_bar.setMaximum(len(self.files_to_process))
+        self.progress_bar.setValue(0)
+        self.progress_bar.show()
+        self.stop_button.show()
+        
+        processed = 0
+        errors = 0
+        
+        try:
+            for i, filepath in enumerate(self.files_to_process):
+                if not self.processing:
+                    break
+                    
+                filename = os.path.basename(filepath)
+                self.progress_bar.setValue(i)
+                self.progress_bar.setFormat(f"Procesando: {filename} (%p%)")
+                QApplication.processEvents()
                 
-                with pd.ExcelWriter(file_path) as writer:
-                    for sheet_name, data in self.processed_data.items():
-                        if data:
-                            # Convertir a DataFrame manteniendo el orden de las columnas
-                            df = pd.DataFrame(data)
-                            # Renombrar columnas usando el mapeo A->nombre, B->nombre, etc.
-                            df.columns = headers[:len(df.columns)]
-                            df.to_excel(writer, sheet_name=sheet_name.capitalize(), index=False)
+                try:
+                    doc_type = self.doc_type_combo.currentText()
+                    processor = self.processor_map.get(doc_type)
+                    
+                    if processor:
+                        if doc_type == 'Factura de Compra':
+                            result = processor(filepath)
+                            if result:
+                                rows, inventario, descuentos = result if len(result) == 3 else (result, None, None)
+                                if rows:
+                                    self.processed_data['compra'].extend(rows)
+                                    processed += 1
+                                    # Actualizar tabla de compras inmediatamente
+                                    self.update_single_table('compra')
+                                if inventario:
+                                    self.processed_data['inventario'].extend(inventario)
+                                    self.update_single_table('inventario')
+                                if descuentos:
+                                    self.processed_data['descuentos'].extend(descuentos)
+                                    self.update_single_table('descuentos')
+                        else:
+                            rows = processor(filepath)
+                            if rows:
+                                key = self.type_to_key.get(doc_type)
+                                self.processed_data[key].extend(rows)
+                                processed += 1
+                                self.update_single_table(key)
                 
-                QMessageBox.information(self, "Éxito", "Datos exportados correctamente")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error al exportar: {str(e)}")
+                except Exception as e:
+                    errors += 1
+                    print(f"Error procesando {filename}: {str(e)}")
+                    self.processed_data['errores'].append({
+                        'Factura': filename,
+                        'Error': str(e)
+                    })
+                    self.update_single_table('errores')
+                
+                # Actualizar UI
+                QApplication.processEvents()
+        
+        finally:
+            # Restaurar estado de la UI
+            self.processing = False
+            self.process_btn.setEnabled(True)
+            self.select_btn.setEnabled(True)
+            self.doc_type_combo.setEnabled(True)
+            self.progress_bar.hide()
+            self.stop_button.hide()
+            
+            # Mostrar resumen
+            QMessageBox.information(
+                self,
+                "Proceso Completado",
+                f"Procesamiento finalizado:\n"
+                f"- Archivos procesados: {processed}\n"
+                f"- Errores: {errors}"
+            )
+
+    def update_single_table(self, data_type):
+        """Actualiza una tabla específica"""
+        try:
+            if data_type not in self.tables:
+                print(f"Tabla {data_type} no encontrada")
+                return
+            
+            table = self.tables[data_type]
+            data_list = self.processed_data[data_type]
+            
+            print(f"\nActualizando tabla {data_type}")
+            print(f"Datos disponibles: {len(data_list)}")
+            
+            if not data_list:
+                print(f"No hay datos para la tabla {data_type}")
+                table.setRowCount(0)
+                return
+            
+            # Configurar el número de filas
+            table.setRowCount(len(data_list))
+            
+            # Llenar la tabla según el tipo
+            if data_type in ['venta', 'compra', 'credito', 'debito']:
+                # Usar letras para estos tipos
+                for row_idx, row_data in enumerate(data_list):
+                    for col_idx, header in enumerate(self.column_headers.get(data_type, [])):
+                        value = str(row_data.get(chr(65 + col_idx), ''))
+                        item = QTableWidgetItem(value)
+                        table.setItem(row_idx, col_idx, item)
+            else:
+                # Usar nombres de columnas para inventario y otros
+                headers = self.column_headers.get(data_type, [])
+                for row_idx, row_data in enumerate(data_list):
+                    for col_idx, header in enumerate(headers):
+                        value = str(row_data.get(header, ''))
+                        item = QTableWidgetItem(value)
+                        table.setItem(row_idx, col_idx, item)
+            
+            # Ajustar el tamaño de las columnas
+            table.resizeColumnsToContents()
+            QApplication.processEvents()
+            
+        except Exception as e:
+            print(f"Error actualizando tabla {data_type}: {str(e)}")
+            traceback.print_exc()
+
+    def export_to_excel(self):
+        # Obtener solo las pestañas que tienen datos
+        available_tabs = [name for name, table in self.tables.items() if table.rowCount() > 0]
+        
+        if not available_tabs:
+            QMessageBox.warning(self, "Error", "No hay datos para exportar")
+            return
+        
+        # Mostrar diálogo de selección
+        dialog = ExportSelectionDialog(available_tabs, self)
+        if dialog.exec_() == QDialog.Accepted:
+            selected_tabs = dialog.get_selected_tabs()
+            
+            if not selected_tabs:
+                QMessageBox.warning(self, "Error", "No se seleccionaron hojas para exportar")
+                return
+            
+            # Pedir al usuario la ubicación para guardar el archivo
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Guardar Excel",
+                "",
+                "Excel Files (*.xlsx)"
+            )
+            
+            if file_path:
+                try:
+                    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                        for tab_name in selected_tabs:
+                            df = self.table_to_dataframe(self.tables[tab_name])
+                            df.to_excel(writer, sheet_name=tab_name.capitalize(), index=False)
+                
+                    QMessageBox.information(self, "Éxito", "Archivo exportado correctamente")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Error al exportar: {str(e)}")
+    
+    def table_to_dataframe(self, table):
+        # Convertir QTableWidget a DataFrame
+        data = []
+        headers = []
+        
+        # Obtener headers
+        for col in range(table.columnCount()):
+            headers.append(table.horizontalHeaderItem(col).text())
+        
+        # Obtener datos
+        for row in range(table.rowCount()):
+            row_data = []
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                row_data.append(item.text() if item else '')
+            data.append(row_data)
+        
+        return pd.DataFrame(data, columns=headers)

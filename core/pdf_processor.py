@@ -3,6 +3,7 @@ import os
 import re
 import pandas as pd
 from collections import defaultdict
+import traceback
 
 # Importaciones para PDF
 import pdfplumber
@@ -31,10 +32,10 @@ from PyQt5.QtCore import Qt
 
 # Constantes y configuración global
 COLUMN_HEADERS = {
-   "A": "Razón Social",
+    "A": "Nombre del Vendedor",
     "B": "Tipo Documento",
     "C": "Prefijo",
-    "D": "Número Documento",
+    "D": "Documento Comprador",
     "E": "Fecha",
     "F": "Indicador IVA",
     "G": "Concepto",
@@ -101,28 +102,41 @@ def get_document_type(filepath):
         return None
 
 # Funciones auxiliares
-def get_iva_indicator(iva_value):
-    """Determina el indicador IVA basado en el valor del IVA o tipo de impuesto"""
+def get_iva_indicator(iva_value, inc_value=None, inc_percent=None):
+    """
+    Determina el indicador IVA basado en el valor del IVA o INC
+    
+    Args:
+        iva_value: Valor o porcentaje del IVA
+        inc_value: Valor del INC por producto (opcional)
+        inc_percent: Porcentaje del INC (opcional)
+    """
     try:
-        # Para valores numéricos de IVA
-        if isinstance(iva_value, (int, float)) or iva_value.replace('.', '').isdigit():
-            iva = float(iva_value)
+        # Primero verificar si hay INC
+        if inc_value and inc_percent:
+            inc = float(str(inc_percent).replace(',', '.'))
+            if inc in [4, 8, 16]:
+                return "004"  # Si hay INC con estos porcentajes, es 004
+        
+        # Si no hay INC, verificar el IVA
+        if isinstance(iva_value, (int, float)) or (isinstance(iva_value, str) and iva_value.replace('.', '').isdigit()):
+            iva = float(str(iva_value).replace(',', '.'))
             if iva == 19:
                 return "001"
             elif iva == 5:
                 return "002"
             elif iva == 0:
                 return "003"
-            elif iva in [4, 8, 16]:
-                return "004"  # INC-IPO-ICO
+            elif iva in [4, 8, 16]:  # Si el IVA tiene estos valores y no hubo INC, también es 004
+                return "004"
         
-        # Para campos especiales que vienen del documento
+        # Para campos especiales
         if 'IBUA' in str(iva_value).upper():
-            return str(iva_value)  # Retorna el valor directo de IBUA
+            return str(iva_value)
         elif 'ICUI' in str(iva_value).upper():
-            return str(iva_value)  # Retorna el valor directo de ICUI
+            return str(iva_value)
         elif 'OTROS IMPUESTOS' in str(iva_value).upper():
-            return str(iva_value)  # Retorna el valor directo de Otros Impuestos
+            return str(iva_value)
         
         return ""
     except (ValueError, TypeError):
@@ -177,15 +191,15 @@ def extract_field(text, start_marker, end_marker):
 def extract_total_impuestos(pdf):
     """Extrae los impuestos totales del documento"""
     impuestos = {
-        'Total IVA': 0.00,
-        'Total INC': 0.00,
-        'Total Bolsas': 0.00,
-        'IBUA': 0.00,
-        'ICUI': 0.00,  # Agregado ICUI
-        'Otros Impuestos': 0.00,
-        'Rete Fuente': 0.00,
-        'Rete IVA': 0.00,
-        'Rete ICA': 0.00
+        'total_iva': 0.00,
+        'total_inc': 0.00,
+        'total_bolsas': 0.00,
+        'ibua': 0.00,
+        'icui': 0.00,
+        'otros_impuestos': 0.00,
+        'rete_fuente': 0.00,
+        'rete_iva': 0.00,
+        'rete_ica': 0.00
     }
     
     try:
@@ -198,20 +212,20 @@ def extract_total_impuestos(pdf):
         
         if datos_totales_text:
             patrones = {
-                'Total IVA': [r'IVA\s*[\$\s]*([0-9.,]+)'],
-                'Total INC': [r'INC\s*[\$\s]*([0-9.,]+)'],
-                'Total Bolsas': [r'Bolsas\s*[\$\s]*([0-9.,]+)'],
-                'IBUA': [r'IBUA\s*[\$\s]*([0-9.,]+)'],
-                'ICUI': [r'ICUI\s*[\$\s]*([0-9.,]+)'],  # Patrón específico para ICUI
-                'Otros Impuestos': [r'Otros impuestos\s*[\$\s]*([0-9.,]+)'],
-                'Rete Fuente': [r'Rete fuente\s*[\$\s]*([0-9.,]+)'],
-                'Rete IVA': [r'Rete IVA\s*[\$\s]*([0-9.,]+)'],
-                'Rete ICA': [r'Rete ICA\s*[\$\s]*([0-9.,]+)']
+                'total_iva': [r'IVA\s*[\$\s]*([0-9.,]+)'],
+                'total_inc': [r'INC\s*[\$\s]*([0-9.,]+)'],
+                'total_bolsas': [r'Bolsas\s*[\$\s]*([0-9.,]+)'],
+                'ibua': [r'IBUA\s*[\$\s]*([0-9.,]+)'],
+                'icui': [r'ICUI\s*[\$\s]*([0-9.,]+)'],
+                'otros_impuestos': [r'Otros impuestos\s*[\$\s]*([0-9.,]+)'],
+                'rete_fuente': [r'Rete fuente\s*[\$\s]*([0-9.,]+)'],
+                'rete_iva': [r'Rete IVA\s*[\$\s]*([0-9.,]+)'],
+                'rete_ica': [r'Rete ICA\s*[\$\s]*([0-9.,]+)']
             }
             
             for impuesto, lista_patrones in patrones.items():
                 for patron in lista_patrones:
-                    match = re.search(patron, datos_totales_text, re.IGNORECASE)  # Agregado IGNORECASE
+                    match = re.search(patron, datos_totales_text, re.IGNORECASE)
                     if match:
                         valor_str = match.group(1).strip()
                         try:
@@ -220,17 +234,12 @@ def extract_total_impuestos(pdf):
                             break
                         except Exception as e:
                             print(f"Error convirtiendo valor para {impuesto}: {valor_str} - {str(e)}")
-                            
-            # Debug: imprimir el texto encontrado
-            print("Datos Totales encontrados:", datos_totales_text)
-            print("Impuestos extraídos:", impuestos)
-            
     except Exception as e:
         print(f"Error extrayendo impuestos: {str(e)}")
     
     return impuestos
 
-def create_base_row(emisor, tipo_documento, numero_documento, fecha_emision, numero_factura, iva_percent, base_iva, impuestos):
+def create_base_row(emisor, tipo_documento, numero_documento, fecha_emision, numero_factura, iva_percent, base_iva, impuestos, indicador_iva):
     """Crea una fila base con todos los valores"""
     row = {
         "A": emisor,
@@ -238,7 +247,7 @@ def create_base_row(emisor, tipo_documento, numero_documento, fecha_emision, num
         "C": "",
         "D": numero_documento,
         "E": fecha_emision,
-        "F": get_iva_indicator(iva_percent),
+        "F": indicador_iva,
         "G": "PRINCIPAL",
         "H": "1",
         "I": "UNIDAD",
@@ -248,15 +257,15 @@ def create_base_row(emisor, tipo_documento, numero_documento, fecha_emision, num
         "M": numero_factura,
         "N": fecha_emision,
         "O": numero_factura,
-        "P": str(impuestos['Total IVA']),
-        "Q": str(impuestos['Total INC']),
-        "R": str(impuestos['Total Bolsas']),
-        "S": str(impuestos['Otros Impuestos']),  # Valor directo de Otros Impuestos
-        "T": str(impuestos['IBUA']), 
-        "U": str(impuestos['ICUI']),            # Valor directo de IBUA
-        "V": str(impuestos['Rete Fuente']),
-        "W": str(impuestos['Rete IVA']),
-        "X": str(impuestos['Rete ICA'])
+        "P": str(impuestos['total_iva']),
+        "Q": str(impuestos['total_inc']),
+        "R": str(impuestos['total_bolsas']),
+        "S": str(impuestos['otros_impuestos']),  # Valor directo de Otros Impuestos
+        "T": str(impuestos['ibua']), 
+        "U": str(impuestos['icui']),            # Valor directo de IBUA
+        "V": str(impuestos['rete_fuente']),
+        "W": str(impuestos['rete_iva']),
+        "X": str(impuestos['rete_ica'])
     }
     return row
 
@@ -270,43 +279,85 @@ def process_factura_venta(pdf_path):
             first_page = pdf.pages[0]
             text = first_page.extract_text()
             
-            emisor = extract_field(text, "Razón Social:", "Nombre Comercial:")
-            numero_documento = extract_field(text, "Nit del Emisor:", "País:")
+            # Extraer campos básicos
+            nombre_vendedor = extract_field(text, "Razón Social:", "Nombre Comercial:")
+            
+            # Intentar diferentes patrones para el documento del comprador
+            documento_comprador = None
+            if "Número de Documento:" in text:
+                documento_comprador = extract_field(text, "Número de Documento:", "Departamento:")
+            elif "Número Documento:" in text:
+                documento_comprador = extract_field(text, "Número Documento:", "Departamento:")
+            
             fecha_emision = extract_field(text, "Fecha de Emisión:", "Medio de Pago:")
             numero_factura = extract_field(text, "Número de Factura:", "Forma de pago:")
             
+            # Imprimir valores para debug
+            print(f"Valores encontrados:")
+            print(f"Nombre vendedor: {nombre_vendedor}")
+            print(f"Documento comprador: {documento_comprador}")
+            print(f"Fecha emisión: {fecha_emision}")
+            print(f"Número factura: {numero_factura}")
+            
+            if not all([nombre_vendedor, documento_comprador, fecha_emision, numero_factura]):
+                raise Exception("Archivo sin datos iniciales o incorrectos")
+            
             impuestos = extract_total_impuestos(pdf)
             
-            sumas_por_iva = defaultdict(float)
+            # Diccionario para agrupar bases gravables por porcentaje de IVA
+            bases_por_iva = defaultdict(float)
+            
             for page in pdf.pages:
                 tables = page.extract_tables()
                 for table in tables:
                     for row in table:
-                        if not row or len(row) < 10:
+                        if not row or len(row) < 11:
                             continue
+                        
                         row = [str(cell).strip() if cell is not None else '' for cell in row]
                         if row[0].strip().isdigit():
                             try:
+                                # Extraer valores de la fila
                                 precio_unitario = parse_colombian_number(row[5])
-                                iva_percent = float(row[9].replace(',', '.'))
-                                sumas_por_iva[iva_percent] += precio_unitario
+                                cantidad = parse_colombian_number(row[4])
+                                descuento = parse_colombian_number(row[6]) if row[6].strip() else 0.0
+                                iva_pesos = parse_colombian_number(row[8]) if row[8].strip() else 0.0
+                                iva_percent = float(row[9].replace(',', '.')) if row[9].strip() else 0.0
+                                precio_unitario_venta = parse_colombian_number(row[12])
+                                
+                                # Hacer la operación
+                                precio_calculado = (precio_unitario * cantidad) - descuento
+                                
+                                # Comparar con precio unitario de venta
+                                if abs(precio_calculado - precio_unitario_venta) < 0.1:
+                                    # Tiene IVA incluido, restar IVA
+                                    base_gravable = precio_calculado - iva_pesos
+                                else:
+                                    # No tiene IVA incluido
+                                    base_gravable = precio_calculado
+                                
+                                # Agrupar por porcentaje de IVA
+                                bases_por_iva[iva_percent] += base_gravable
+                                
                             except Exception as e:
                                 print(f"Error procesando fila: {str(e)}")
                                 continue
             
+            # Crear una fila por cada porcentaje de IVA único
             rows = []
-            for iva_percent, base_iva in sumas_por_iva.items():
-                row = create_base_row(
-                    emisor=emisor,
+            for iva_percent, base_total in bases_por_iva.items():
+                new_row = create_base_row(
+                    emisor=nombre_vendedor,
                     tipo_documento="Factura de Venta",
-                    numero_documento=numero_documento,
+                    numero_documento=documento_comprador,
                     fecha_emision=fecha_emision,
                     numero_factura=numero_factura,
                     iva_percent=iva_percent,
-                    base_iva=base_iva,
-                    impuestos=impuestos
+                    base_iva=round(base_total, 2),
+                    impuestos=impuestos,
+                    indicador_iva=get_iva_indicator(iva_percent)
                 )
-                rows.append(row)
+                rows.append(new_row)
             
             return rows
             
@@ -321,17 +372,22 @@ def process_factura_compra(pdf_path):
             first_page = pdf.pages[0]
             text = first_page.extract_text()
             
+            # Extraer campos básicos
             nombre_comprador = extract_field(text, "Nombre o Razón Social:", "Tipo de Documento:")
-            numero_documento = extract_field(text, "Nit del Emisor:", "País:")
+            nit_vendedor = extract_field(text, "Nit del Emisor:", "País:")
             fecha_emision = extract_field(text, "Fecha de Emisión:", "Medio de Pago:")
             numero_factura = extract_field(text, "Número de Factura:", "Forma de pago:")
             
+            print(f"Valores encontrados:")
+            print(f"Nombre comprador: {nombre_comprador}")
+            print(f"NIT vendedor: {nit_vendedor}")
+            print(f"Fecha emisión: {fecha_emision}")
+            print(f"Número factura: {numero_factura}")
+            
             impuestos = extract_total_impuestos(pdf)
             
+            # Agrupar por porcentaje de IVA
             sumas_por_iva = defaultdict(float)
-            suma_descuentos_detalle = 0
-            iva_asumido = 0
-            tiene_descuento = False
             
             for page in pdf.pages:
                 tables = page.extract_tables()
@@ -339,68 +395,65 @@ def process_factura_compra(pdf_path):
                     for row in table:
                         if not row or len(row) < 10:
                             continue
+                            
                         row = [str(cell).strip() if cell is not None else '' for cell in row]
+                        
                         if row[0].strip().isdigit():
                             try:
+                                cantidad = parse_colombian_number(row[4])
                                 precio_unitario = parse_colombian_number(row[5])
-                                iva_percent = float(row[9].replace(',', '.'))
-                                descuento = parse_colombian_number(row[6]) if row[6] else 0
+                                descuento = parse_colombian_number(row[6])
+                                iva_pesos = parse_colombian_number(row[8])
+                                iva_percent = float(row[9].replace(',', '.')) if row[9].strip() else 0.0
+                                precio_venta = parse_colombian_number(row[12])
                                 
-                                sumas_por_iva[iva_percent] += precio_unitario
-                                if descuento > 0:
-                                    suma_descuentos_detalle += descuento
-                                    tiene_descuento = True
-                                    
+                                # Calcular base gravable usando la misma lógica que en factura de venta
+                                base_gravable = calcular_base_gravable(
+                                    precio_unitario, 
+                                    cantidad, 
+                                    descuento, 
+                                    iva_pesos, 
+                                    precio_venta
+                                )
+                                
+                                # Sumar al grupo de IVA correspondiente
+                                sumas_por_iva[iva_percent] += base_gravable
+                                
+                                print(f"Producto procesado:")
+                                print(f"Base gravable calculada: {base_gravable}")
+                                print(f"IVA %: {iva_percent}")
+                                print(f"Suma acumulada para IVA {iva_percent}%: {sumas_por_iva[iva_percent]}")
+                                
                             except Exception as e:
-                                print(f"Error procesando fila: {str(e)}")
+                                print(f"Error procesando línea: {str(e)}")
                                 continue
-                        elif len(row) >= 4 and "IVA ASUMIDO" in str(row[3]):
-                            try:
-                                iva_asumido = parse_colombian_number(row[5])
-                                tiene_descuento = True
-                            except Exception as e:
-                                print(f"Error procesando IVA ASUMIDO: {str(e)}")
             
+            # Crear filas agrupadas por IVA
             rows = []
             for iva_percent, base_iva in sumas_por_iva.items():
                 row = create_base_row(
                     emisor=nombre_comprador,
                     tipo_documento="Factura de Compra",
-                    numero_documento=numero_documento,
+                    numero_documento=nit_vendedor,
                     fecha_emision=fecha_emision,
                     numero_factura=numero_factura,
                     iva_percent=iva_percent,
                     base_iva=base_iva,
-                    impuestos=impuestos
+                    impuestos=impuestos,
+                    indicador_iva=get_iva_indicator(iva_percent)
                 )
                 rows.append(row)
+                print(f"Fila creada para IVA {iva_percent}%:")
+                print(f"Base: {base_iva}")
             
-            # Procesar descuentos si existen
-            descuento_rows = []
-            if tiene_descuento:
-                valor_descuento = suma_descuentos_detalle if suma_descuentos_detalle > 0 else iva_asumido
-                descuento_row = create_base_row(
-                    emisor=nombre_comprador,
-                    tipo_documento="Factura de Compra",
-                    numero_documento=numero_documento,
-                    fecha_emision=fecha_emision,
-                    numero_factura=numero_factura,
-                    iva_percent=0,
-                    base_iva=valor_descuento,
-                    impuestos=impuestos
-                )
-                descuento_row.update({
-                    "F": "42104001",
-                    "G": str(valor_descuento),
-                    "H": "0"
-                })
-                descuento_rows.append(descuento_row)
+            # Procesar inventario
+            inventory_items = process_inventory_from_compra(pdf_path)
             
-            return rows, descuento_rows
+            return rows, inventory_items, None  # El último None es para los descuentos
             
     except Exception as e:
         print(f"Error procesando factura de compra: {str(e)}")
-        return None, []
+        return None, None, None
 
 # Funciones similares para los otros tipos de documentos
 def process_nota_credito(pdf_path):
@@ -478,7 +531,8 @@ def process_facturas_gastos(pdf_path):
                     numero_factura=numero_factura,
                     iva_percent=iva_percent,
                     base_iva=base_iva,
-                    impuestos=impuestos
+                    impuestos=impuestos,
+                    indicador_iva=get_iva_indicator(iva_percent)
                 )
                 rows.append(row)
             
@@ -539,6 +593,99 @@ def process_inventory(pdf_path):
             
     except Exception as e:
         print(f"Error procesando inventario: {str(e)}")
+        return None
+
+def calcular_base_gravable(precio_unitario, cantidad, descuento, iva_pesos, precio_venta):
+    """
+    Calcula la base gravable según si el precio incluye IVA o no
+    """
+    subtotal = precio_unitario * cantidad - descuento
+    
+    # Si el subtotal más IVA es igual al precio de venta, el precio incluye IVA
+    if round(subtotal, 2) == round(precio_venta, 2):
+        # El precio incluye IVA, restamos el IVA en pesos
+        return subtotal - iva_pesos
+    else:
+        # El precio no incluye IVA, usamos el subtotal directo
+        return subtotal
+
+def process_inventory_from_compra(pdf_path):
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            first_page = pdf.pages[0]
+            text = first_page.extract_text()
+            
+            # Extraer campos básicos ajustando el límite del NIT
+            nit_comprador = extract_field(text, "Número Documento:", "Departamento:").strip()
+            nombre_comprador = extract_field(text, "Nombre o Razón Social:", "Tipo de Documento:").strip()
+            nit_vendedor = extract_field(text, "Nit del Emisor:", "País:").strip()
+            forma_pago = extract_field(text, "Forma de pago:", "Medio de Pago:").strip()
+            numero_factura = extract_field(text, "Número de Factura:", "Forma de pago:").strip()
+            
+            inventory_items = []
+            
+            for page in pdf.pages:
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        if not row or len(row) < 11:
+                            continue
+                            
+                        row = [str(cell).strip() if cell is not None else '' for cell in row]
+                        
+                        if row[0].strip().isdigit():
+                            try:
+                                # Función para formatear números
+                                def format_number(value):
+                                    try:
+                                        num = float(value)
+                                        # Si el número es entero, no mostrar decimales
+                                        if num.is_integer():
+                                            return str(int(num))
+                                        # Si tiene decimales, mostrar máximo 2
+                                        return f"{num:.2f}"
+                                    except:
+                                        return value
+
+                                item = {
+                                    "NIT Comprador": nit_comprador,
+                                    "Nombre Comprador": nombre_comprador,
+                                    "NIT Vendedor": nit_vendedor,
+                                    "Forma Pago": forma_pago,
+                                    "Número Factura": numero_factura,
+                                    "Nro": row[0],
+                                    "Codigo": row[1],
+                                    "Descripcion": row[2],
+                                    "U/M": row[3],
+                                    "Cantidad": format_number(parse_colombian_number(row[4])),
+                                    "Precio_unitario": format_number(parse_colombian_number(row[5].replace('$', ''))),
+                                    "Descuento": format_number(parse_colombian_number(row[6].replace('$', ''))),
+                                    "Recargo": format_number(parse_colombian_number(row[7].replace('$', ''))),
+                                    "IVA": format_number(parse_colombian_number(row[8].replace('$', ''))),
+                                    "Porcentaje_IVA": format_number(float(row[9].replace('%', '').strip() or '0')),
+                                    "INC": format_number(parse_colombian_number(row[10].replace('$', ''))),
+                                    "Porcentaje_INC": format_number(float(row[11].replace('%', '').strip() or '0')),
+                                    "Precio_venta": format_number(parse_colombian_number(row[12].replace('$', ''))),
+                                    "Base_gravable": format_number(calcular_base_gravable(
+                                        parse_colombian_number(row[5].replace('$', '')),
+                                        parse_colombian_number(row[4]),
+                                        parse_colombian_number(row[6].replace('$', '')),
+                                        parse_colombian_number(row[8].replace('$', '')),
+                                        parse_colombian_number(row[12].replace('$', ''))
+                                    ))
+                                }
+                                inventory_items.append(item)
+                                
+                            except Exception as e:
+                                print(f"Error procesando línea de inventario: {row}")
+                                print(f"Error detallado: {str(e)}")
+                                continue
+            
+            return inventory_items
+            
+    except Exception as e:
+        print(f"Error general procesando inventario: {str(e)}")
+        traceback.print_exc()
         return None
 
 class ValidatorTab(QWidget):
