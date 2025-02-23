@@ -880,6 +880,85 @@ def process_inventory_from_compra(pdf_path):
         traceback.print_exc()
         return None
 
+def extract_emisor_info(text):
+    """Extrae información del emisor del texto del PDF"""
+    info = {}
+    
+    # Extraer dirección
+    direccion_match = re.search(r"Dirección:\s*(.*?)(?=\n|Teléfono|Email)", text)
+    if direccion_match:
+        info['direccion'] = direccion_match.group(1).strip()
+    
+    # Extraer teléfono
+    telefono_match = re.search(r"Teléfono:\s*(.*?)(?=\n|Email)", text)
+    if telefono_match:
+        info['telefono'] = telefono_match.group(1).strip()
+    
+    # Extraer email
+    email_match = re.search(r"Email:\s*(.*?)(?=\n)", text)
+    if email_match:
+        info['email'] = email_match.group(1).strip()
+    
+    # ... etc para los demás campos
+    
+    return info
+
+def process_terceros(pdf_path):
+    """Procesa un PDF para extraer información del emisor/vendedor"""
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            first_page = pdf.pages[0]
+            text = first_page.extract_text()
+            
+            # Imprimir para debug
+            print(f"\nProcesando {pdf_path}")
+            print("Texto extraído:")
+            print(text[:500])  # Primeros 500 caracteres
+            
+            # Buscar la sección del emisor con un patrón más flexible
+            emisor_section = re.search(r"(?:Datos del Emisor|Datos del Vendedor|Información del Emisor)(.*?)(?=Datos del|Información del|$)", text, re.DOTALL | re.IGNORECASE)
+            if not emisor_section:
+                print(f"No se encontró sección de emisor en {pdf_path}")
+                return None
+                
+            text_emisor = emisor_section.group(1)
+            print("\nTexto del emisor encontrado:")
+            print(text_emisor)
+            
+            # Patrones ajustados para capturar la información completa
+            patterns = {
+                'Razón Social': r"(?:Razón Social|Nombre):\s*(.*?)(?=\n|Nombre|$)",
+                'Nombre Comercial': r"(?:Nombre Comercial|Nombre de Establecimiento):\s*(.*?)(?=\n|Nit|$)",
+                'NIT del Emisor': r"(?:Nit del Emisor|NIT|Número de Identificación):\s*(.*?)(?=\n|País|$)",  # Cambiado
+                'Tipo de Contribuyente': r"(?:Tipo de Contribuyente|Tipo):\s*(.*?)(?=\n|Departamento|$)",  # Cambiado
+                'Responsabilidad Tributaria': r"(?:Responsabilidad Tributaria|Responsabilidad):\s*(.*?)(?=\n|Dirección|$)",  # Cambiado
+                'Régimen Fiscal': r"(?:Régimen Fiscal|Régimen):\s*(.*?)(?=\n|Municipio|$)",  # Cambiado
+                'Actividad Económica': r"(?:Actividad Económica|Actividad):\s*(.*?)(?=\n|Teléfono|Móvil|$)",  # Cambiado
+                'Dirección': r"(?:Dirección|Domicilio):\s*(.*?)(?=\n|Teléfono|Móvil|$)",
+                'Teléfono/Móvil': r"(?:Teléfono|Móvil|Tel):\s*(.*?)(?=\n|Correo|Email|$)",
+                'Correo': r"(?:Correo|Email|E-mail):\s*(.*?)(?=\n|$)",
+                'País': r"País:\s*(.*?)(?=\n|$)",
+                'Departamento': r"(?:Departamento|Depto):\s*(.*?)(?=\n|$)",
+                'Municipio': r"(?:Municipio|Ciudad):\s*(.*?)(?=\n|$)"
+            }
+            
+            emisor = {}
+            for field, pattern in patterns.items():
+                match = re.search(pattern, text_emisor, re.IGNORECASE)
+                if match:
+                    emisor[field] = match.group(1).strip()
+                else:
+                    emisor[field] = ''
+            
+            if any(emisor.values()):
+                return [emisor]
+            return None
+            
+    except Exception as e:
+        print(f"Error procesando terceros en {pdf_path}: {str(e)}")
+        traceback.print_exc()
+        return None
+
 class ValidatorTab(QWidget):
     def __init__(self):
         super().__init__()

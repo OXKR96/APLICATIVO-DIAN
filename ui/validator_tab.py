@@ -1,19 +1,15 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                             QFileDialog, QLabel, QProgressDialog, QTableWidget,
                             QTableWidgetItem, QMessageBox, QTabWidget, QComboBox,
-                            QHeaderView, QDialog, QCheckBox, QProgressBar)
+                            QHeaderView, QDialog, QCheckBox, QProgressBar, QApplication)
 from PyQt5.QtCore import Qt
 import pandas as pd
 import os
 from PyPDF2 import PdfReader
 from core.pdf_processor import (process_factura_venta, process_factura_compra,
                              process_nota_credito, process_nota_debito,
-                             process_facturas_compras_nuevos, process_facturas_gastos,
-                             process_inventory, get_document_type, COLUMN_HEADERS)
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QFileDialog, QLabel, QProgressDialog, QTableWidget,
-                             QTableWidgetItem, QMessageBox, QTabWidget, QComboBox,
-                             QHeaderView, QApplication)  #
+                             process_facturas_gastos, process_inventory, 
+                             get_document_type, COLUMN_HEADERS, process_terceros)
 import pdfplumber
 import logging
 import time
@@ -82,7 +78,7 @@ class ValidatorTab(QWidget):
             'Factura de Compra': process_factura_compra,
             'Nota Crédito': process_nota_credito,
             'Nota Débito': process_nota_debito,
-            'Facturas de Compras Nuevos': process_facturas_compras_nuevos,
+            'Terceros': process_terceros,
             'Facturas de Gastos': process_facturas_gastos
         }
         
@@ -91,7 +87,7 @@ class ValidatorTab(QWidget):
             'Factura de Compra': 'compra',
             'Nota Crédito': 'credito',
             'Nota Débito': 'debito',
-            'Facturas de Compras Nuevos': 'compras_nuevos',
+            'Terceros': 'terceros',
             'Facturas de Gastos': 'gastos'
         }
 
@@ -105,7 +101,7 @@ class ValidatorTab(QWidget):
             'errores': [],
             'inventario': [],
             'descuentos': [],
-            'compras_nuevos': [],
+            'terceros': [],
             'gastos': []
         }
 
@@ -158,7 +154,7 @@ class ValidatorTab(QWidget):
             'Factura de Compra',
             'Nota Crédito',
             'Nota Débito',
-            'Facturas de Compras Nuevos',
+            'Terceros',
             'Facturas de Gastos'
         ])
 
@@ -255,7 +251,32 @@ class ValidatorTab(QWidget):
                 "Rete IVA",
                 "Rete ICA"
             ],
-            'credito': [  # Añadir mapeo específico para notas crédito
+            'compra': [
+                "Nombre del Comprador",
+                "Tipo Documento",
+                "Prefijo",
+                "Documento Comprador",
+                "Fecha",
+                "Indicador IVA",
+                "Concepto",
+                "Cantidad",
+                "Unidad Medida",
+                "Base Gravable",
+                "Porcentaje IVA",
+                "NIT",
+                "Número Factura",
+                "Fecha Factura",
+                "Número Control",
+                "Total IVA",
+                "Total INC",
+                "Total Bolsas",
+                "Otros Impuestos",
+                "ICUI",
+                "Rete Fuente",
+                "Rete IVA",
+                "Rete ICA"
+            ],
+            'credito': [
                 "Nombre del Vendedor",
                 "Tipo Documento",
                 "Prefijo",
@@ -280,7 +301,7 @@ class ValidatorTab(QWidget):
                 "Rete IVA",
                 "Rete ICA"
             ],
-            'debito': [  # Añadir mapeo específico para notas débito
+            'debito': [
                 "Nombre del Vendedor",
                 "Tipo Documento",
                 "Prefijo",
@@ -305,7 +326,22 @@ class ValidatorTab(QWidget):
                 "Rete IVA",
                 "Rete ICA"
             ],
-            'inventario': [  # Restaurar headers de inventario
+            'terceros': [
+                "Razón Social",
+                "Nombre Comercial",
+                "NIT del Emisor",
+                "Tipo de Contribuyente",
+                "Responsabilidad Tributaria",
+                "Régimen Fiscal",
+                "Actividad Económica",
+                "Dirección",
+                "Teléfono/Móvil",
+                "Correo",
+                "País",
+                "Departamento",
+                "Municipio"
+            ],
+            'inventario': [
                 "NIT Comprador",
                 "Nombre Comprador",
                 "NIT Vendedor", 
@@ -326,7 +362,7 @@ class ValidatorTab(QWidget):
                 "Precio_venta",
                 "Base_gravable"
             ],
-            'descuentos': [  # Restaurar headers de descuentos
+            'descuentos': [
                 "datos del comprador",
                 "tipo de factura",
                 "en blanco",
@@ -350,7 +386,7 @@ class ValidatorTab(QWidget):
             'errores': QTableWidget(),
             'inventario': QTableWidget(),
             'descuentos': QTableWidget(),
-            'compras_nuevos': QTableWidget(),
+            'terceros': QTableWidget(),
             'gastos': QTableWidget()
         }
 
@@ -414,14 +450,74 @@ class ValidatorTab(QWidget):
         if not self.files_to_process:
             QMessageBox.warning(self, "Error", "No hay archivos seleccionados")
             return
+        
+        doc_type = self.doc_type_combo.currentText()
+        processor = self.processor_map.get(doc_type)
+        
+        if not processor:
+            return
+        
+        # Si es procesamiento de terceros, pedir Excel base
+        if doc_type == 'Terceros':
+            reply = QMessageBox.information(
+                self,
+                "Procesar Terceros",
+                "A continuación seleccione el archivo Excel con los NITs existentes.\n\n"
+                "Los nuevos emisores serán agregados automáticamente.",
+                QMessageBox.Ok | QMessageBox.Cancel
+            )
             
-        # Iniciar procesamiento
+            if reply == QMessageBox.Ok:
+                excel_path, _ = QFileDialog.getOpenFileName(
+                    self,
+                    "Seleccionar Excel de NITs",
+                    "",
+                    "Excel Files (*.xlsx *.xls)"
+                )
+                
+                if not excel_path:
+                    return
+                    
+                try:
+                    # Cargar NITs existentes
+                    df_nits = pd.read_excel(excel_path)
+                    
+                    # Buscar la columna que contenga NIT (más flexible)
+                    nit_column = None
+                    for col in df_nits.columns:
+                        if 'NIT' in str(col).upper():
+                            nit_column = col
+                            break
+                    
+                    if not nit_column:
+                        QMessageBox.warning(
+                            self,
+                            "Error",
+                            "No se encontró una columna con NITs en el Excel.\n"
+                            "Asegúrese que el archivo tenga una columna que contenga 'NIT' en su nombre."
+                        )
+                        return
+                        
+                    nits_existentes = set(str(nit) for nit in df_nits[nit_column].dropna())
+                    
+                    # Informar cuántos NITs se cargaron
+                    QMessageBox.information(
+                        self,
+                        "Excel Cargado",
+                        f"Se cargaron {len(nits_existentes)} NITs del archivo Excel.\n\n"
+                        "Se procederá a procesar los documentos."
+                    )
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Error cargando Excel: {str(e)}")
+                    return
+            else:
+                return
+        
         self.processing = True
         self.process_btn.setEnabled(False)
         self.select_btn.setEnabled(False)
         self.doc_type_combo.setEnabled(False)
         
-        # Mostrar barra de progreso y botón de detener
         self.progress_bar.setMaximum(len(self.files_to_process))
         self.progress_bar.setValue(0)
         self.progress_bar.show()
@@ -429,6 +525,7 @@ class ValidatorTab(QWidget):
         
         processed = 0
         errors = 0
+        nuevos_emisores = 0
         
         try:
             for i, filepath in enumerate(self.files_to_process):
@@ -438,36 +535,45 @@ class ValidatorTab(QWidget):
                 filename = os.path.basename(filepath)
                 self.progress_bar.setValue(i)
                 self.progress_bar.setFormat(f"Procesando: {filename} (%p%)")
-                QApplication.processEvents()
                 
                 try:
-                    doc_type = self.doc_type_combo.currentText()
-                    processor = self.processor_map.get(doc_type)
-                    
-                    if processor:
-                        if doc_type == 'Factura de Compra':
-                            result = processor(filepath)
-                            if result:
-                                rows, inventario, descuentos = result if len(result) == 3 else (result, None, None)
-                                if rows:
-                                    self.processed_data['compra'].extend(rows)
-                                    processed += 1
-                                    self.update_single_table('compra')
-                                if inventario:
-                                    self.processed_data['inventario'].extend(inventario)
-                                    self.update_single_table('inventario')
-                                if descuentos:
-                                    self.processed_data['descuentos'].extend(descuentos)
-                                    self.update_single_table('descuentos')
-                        else:
-                            rows = processor(filepath)
+                    if doc_type == 'Factura de Compra':
+                        result = processor(filepath)
+                        if result:
+                            rows, inventario, descuentos = result if len(result) == 3 else (result, None, None)
                             if rows:
-                                key = self.type_to_key.get(doc_type)
-                                if key:  # Asegurarse de que existe la clave
-                                    self.processed_data[key].extend(rows)
-                                    processed += 1
-                                    self.update_single_table(key)
-                                    print(f"Datos procesados para {key}: {len(rows)} filas")  # Debug
+                                self.processed_data['compra'].extend(rows)
+                                processed += 1
+                                self.update_single_table('compra')
+                            if inventario:
+                                self.processed_data['inventario'].extend(inventario)
+                                self.update_single_table('inventario')
+                            if descuentos:
+                                self.processed_data['descuentos'].extend(descuentos)
+                                self.update_single_table('descuentos')
+                    elif doc_type == 'Terceros':
+                        rows = processor(filepath)
+                        if rows:
+                            # Verificar si es un emisor nuevo
+                            for row in rows:
+                                nit = row.get('NIT del Emisor', '')
+                                if nit and nit not in nits_existentes:
+                                    nuevos_emisores += 1
+                                    nits_existentes.add(nit)
+                        
+                        key = self.type_to_key.get(doc_type)
+                        if key:
+                            self.processed_data[key].extend(rows)
+                            processed += 1
+                            self.update_single_table(key)
+                    else:
+                        rows = processor(filepath)
+                        if rows:
+                            key = self.type_to_key.get(doc_type)
+                            if key:
+                                self.processed_data[key].extend(rows)
+                                processed += 1
+                                self.update_single_table(key)
                 
                 except Exception as e:
                     errors += 1
@@ -478,11 +584,9 @@ class ValidatorTab(QWidget):
                     })
                     self.update_single_table('errores')
                 
-                # Actualizar UI
                 QApplication.processEvents()
-        
+                
         finally:
-            # Restaurar estado de la UI
             self.processing = False
             self.process_btn.setEnabled(True)
             self.select_btn.setEnabled(True)
@@ -490,14 +594,24 @@ class ValidatorTab(QWidget):
             self.progress_bar.hide()
             self.stop_button.hide()
             
-            # Mostrar resumen
-            QMessageBox.information(
-                self,
-                "Proceso Completado",
-                f"Procesamiento finalizado:\n"
-                f"- Archivos procesados: {processed}\n"
-                f"- Errores: {errors}"
-            )
+            # Mensaje final para terceros
+            if doc_type == 'Terceros':
+                QMessageBox.information(
+                    self,
+                    "Proceso Completado",
+                    f"Procesamiento finalizado:\n"
+                    f"- Archivos procesados: {processed}\n"
+                    f"- Nuevos emisores encontrados: {nuevos_emisores}\n"
+                    f"- Errores: {errors}"
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Proceso Completado",
+                    f"Procesamiento finalizado:\n"
+                    f"- Archivos procesados: {processed}\n"
+                    f"- Errores: {errors}"
+                )
 
     def update_single_table(self, data_type):
         try:
@@ -523,19 +637,27 @@ class ValidatorTab(QWidget):
             
             # Llenar la tabla según el tipo
             for row_idx, row_data in enumerate(data_list):
-                if data_type in ['venta', 'compra', 'credito', 'debito']:
-                    # Usar letras para estos tipos
-                    for col_idx, _ in enumerate(headers):
-                        letra = chr(65 + col_idx)
-                        value = str(row_data.get(letra, ''))
-                        item = QTableWidgetItem(value)
-                        table.setItem(row_idx, col_idx, item)
-                else:
-                    # Usar nombres de columnas para inventario y descuentos
+                if data_type in ['terceros', 'inventario', 'descuentos']:
+                    # Para terceros, inventario y descuentos usamos los nombres de las columnas
                     for col_idx, header in enumerate(headers):
                         value = str(row_data.get(header, ''))
                         item = QTableWidgetItem(value)
                         table.setItem(row_idx, col_idx, item)
+                else:
+                    # Para otros tipos verificamos si row_data es lista o diccionario
+                    if isinstance(row_data, list):
+                        # Si es lista, usamos el índice
+                        for col_idx, _ in enumerate(headers):
+                            value = str(row_data[col_idx] if col_idx < len(row_data) else '')
+                            item = QTableWidgetItem(value)
+                            table.setItem(row_idx, col_idx, item)
+                    else:
+                        # Si es diccionario, usamos las letras como antes
+                        for col_idx, _ in enumerate(headers):
+                            letra = chr(65 + col_idx)
+                            value = str(row_data.get(letra, ''))
+                            item = QTableWidgetItem(value)
+                            table.setItem(row_idx, col_idx, item)
             
             # Ajustar el tamaño de las columnas
             table.resizeColumnsToContents()
