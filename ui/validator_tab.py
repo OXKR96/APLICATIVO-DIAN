@@ -300,6 +300,20 @@ class ValidatorTab(QWidget):
                 "Porcentaje_INC",
                 "Precio_venta",
                 "Base_gravable"
+            ],
+            'descuentos': [
+                "datos del comprador",
+                "tipo de factura",
+                "en blanco",
+                "nit vendedor",
+                "Fecha de Emisión",
+                "tipo de descuento",
+                "suma de descuentos",
+                "cero",
+                "factura",
+                "nit vendedor2",
+                "fecha emision",
+                "factura2"
             ]
         }
 
