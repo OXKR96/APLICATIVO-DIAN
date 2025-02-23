@@ -300,6 +300,20 @@ class ValidatorTab(QWidget):
                 "Porcentaje_INC",
                 "Precio_venta",
                 "Base_gravable"
+            ],
+            'descuentos': [
+                "datos del comprador",
+                "tipo de factura",
+                "en blanco",
+                "nit vendedor",
+                "Fecha de Emisión",
+                "tipo de descuento",
+                "suma de descuentos",
+                "cero",
+                "factura",
+                "nit vendedor2",
+                "fecha emision",
+                "factura2"
             ]
         }
 
@@ -461,49 +475,34 @@ class ValidatorTab(QWidget):
 
     def update_single_table(self, data_type):
         """Actualiza una tabla específica"""
-        try:
-            if data_type not in self.tables:
-                print(f"Tabla {data_type} no encontrada")
-                return
+        if data_type not in self.tables:
+            return
+        
+        table = self.tables[data_type]
+        data = self.processed_data[data_type]
+        
+        if not data:
+            return
+        
+        # Limpiar tabla existente
+        table.setRowCount(0)
+        
+        # Agregar nuevas filas
+        for row_data in data:
+            row = table.rowCount()
+            table.insertRow(row)
             
-            table = self.tables[data_type]
-            data_list = self.processed_data[data_type]
-            
-            print(f"\nActualizando tabla {data_type}")
-            print(f"Datos disponibles: {len(data_list)}")
-            
-            if not data_list:
-                print(f"No hay datos para la tabla {data_type}")
-                table.setRowCount(0)
-                return
-            
-            # Configurar el número de filas
-            table.setRowCount(len(data_list))
-            
-            # Llenar la tabla según el tipo
-            if data_type in ['venta', 'compra', 'credito', 'debito']:
-                # Usar letras para estos tipos
-                for row_idx, row_data in enumerate(data_list):
-                    for col_idx, header in enumerate(self.column_headers.get(data_type, [])):
-                        value = str(row_data.get(chr(65 + col_idx), ''))
-                        item = QTableWidgetItem(value)
-                        table.setItem(row_idx, col_idx, item)
+            # Si es la tabla de descuentos, usar las columnas específicas
+            if data_type == 'descuentos':
+                columns = self.column_headers['descuentos']
+                for col, key in enumerate(columns):
+                    item = QTableWidgetItem(str(row_data.get(key, '')))
+                    table.setItem(row, col, item)
             else:
-                # Usar nombres de columnas para inventario y otros
-                headers = self.column_headers.get(data_type, [])
-                for row_idx, row_data in enumerate(data_list):
-                    for col_idx, header in enumerate(headers):
-                        value = str(row_data.get(header, ''))
-                        item = QTableWidgetItem(value)
-                        table.setItem(row_idx, col_idx, item)
-            
-            # Ajustar el tamaño de las columnas
-            table.resizeColumnsToContents()
-            QApplication.processEvents()
-            
-        except Exception as e:
-            print(f"Error actualizando tabla {data_type}: {str(e)}")
-            traceback.print_exc()
+                # Código existente para otras tablas
+                for col, key in enumerate(sorted(row_data.keys())):
+                    item = QTableWidgetItem(str(row_data[key]))
+                    table.setItem(row, col, item)
 
     def export_to_excel(self):
         # Obtener solo las pestañas que tienen datos

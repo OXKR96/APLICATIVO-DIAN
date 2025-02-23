@@ -366,7 +366,6 @@ def process_factura_venta(pdf_path):
         return None
 
 def process_factura_compra(pdf_path):
-    """Procesa una factura de compra"""
     try:
         with pdfplumber.open(pdf_path) as pdf:
             first_page = pdf.pages[0]
@@ -378,17 +377,34 @@ def process_factura_compra(pdf_path):
             fecha_emision = extract_field(text, "Fecha de Emisión:", "Medio de Pago:")
             numero_factura = extract_field(text, "Número de Factura:", "Forma de pago:")
             
-            print(f"Valores encontrados:")
-            print(f"Nombre comprador: {nombre_comprador}")
-            print(f"NIT vendedor: {nit_vendedor}")
-            print(f"Fecha emisión: {fecha_emision}")
-            print(f"Número factura: {numero_factura}")
-            
             impuestos = extract_total_impuestos(pdf)
             
-            # Agrupar por porcentaje de IVA
-            sumas_por_iva = defaultdict(float)
+            # Variables para los descuentos
+            suma_descuentos_detalle = 0
+            descuento_global = 0
+            total_bruto = 0
+            suma_descuento_global = 0
+            tiene_descuento_detalle = False
             
+            # Buscar total bruto y descuento global
+            for page in pdf.pages:
+                text = page.extract_text()
+                if "Datos Totales" in text:
+                    datos_totales = text[text.find("Datos Totales"):]
+                    
+                    # Buscar total bruto
+                    match = re.search(r'Total Bruto Factura\s*[\$\s]*([0-9.,]+)', datos_totales)
+                    if match:
+                        total_bruto = parse_colombian_number(match.group(1))
+                    
+                    # Buscar descuento global
+                    match = re.search(r'Descuento Global \(-\)\s*[\$\s]*([0-9.,]+)', datos_totales)
+                    if match:
+                        descuento_global = parse_colombian_number(match.group(1))
+                        suma_descuento_global = descuento_global
+            
+            # Procesar items y calcular sumas por IVA
+            sumas_por_iva = defaultdict(float)
             for page in pdf.pages:
                 tables = page.extract_tables()
                 for table in tables:
@@ -407,7 +423,6 @@ def process_factura_compra(pdf_path):
                                 iva_percent = float(row[9].replace(',', '.')) if row[9].strip() else 0.0
                                 precio_venta = parse_colombian_number(row[12])
                                 
-                                # Calcular base gravable usando la misma lógica que en factura de venta
                                 base_gravable = calcular_base_gravable(
                                     precio_unitario, 
                                     cantidad, 
@@ -416,19 +431,16 @@ def process_factura_compra(pdf_path):
                                     precio_venta
                                 )
                                 
-                                # Sumar al grupo de IVA correspondiente
                                 sumas_por_iva[iva_percent] += base_gravable
                                 
-                                print(f"Producto procesado:")
-                                print(f"Base gravable calculada: {base_gravable}")
-                                print(f"IVA %: {iva_percent}")
-                                print(f"Suma acumulada para IVA {iva_percent}%: {sumas_por_iva[iva_percent]}")
-                                
+                                if descuento > 0:
+                                    suma_descuentos_detalle += descuento
+                                    tiene_descuento_detalle = True
                             except Exception as e:
                                 print(f"Error procesando línea: {str(e)}")
                                 continue
             
-            # Crear filas agrupadas por IVA
+            # Crear filas normales
             rows = []
             for iva_percent, base_iva in sumas_por_iva.items():
                 row = create_base_row(
@@ -443,16 +455,52 @@ def process_factura_compra(pdf_path):
                     indicador_iva=get_iva_indicator(iva_percent)
                 )
                 rows.append(row)
-                print(f"Fila creada para IVA {iva_percent}%:")
-                print(f"Base: {base_iva}")
+            
+            # Crear filas de descuentos según el caso
+            descuentos = []
+            
+            # Si hay descuento global > 0, usamos ese
+            if descuento_global > 0:
+                descuento = {
+                    "datos del comprador": nombre_comprador,
+                    "tipo de factura": "Factura de Compra",
+                    "en blanco": "",
+                    "nit vendedor": nit_vendedor,
+                    "Fecha de Emisión": fecha_emision,
+                    "tipo de descuento": "24080199",
+                    "suma de descuentos": f"{suma_descuento_global:.2f}",
+                    "cero": "0",
+                    "factura": numero_factura,
+                    "nit vendedor2": nit_vendedor,
+                    "fecha emision": fecha_emision,
+                    "factura2": numero_factura
+                }
+                descuentos.append(descuento)
+            elif tiene_descuento_detalle:
+                descuento = {
+                    "datos del comprador": nombre_comprador,
+                    "tipo de factura": "Factura de Compra",
+                    "en blanco": "",
+                    "nit vendedor": nit_vendedor,
+                    "Fecha de Emisión": fecha_emision,
+                    "tipo de descuento": "42104001",
+                    "suma de descuentos": f"{suma_descuentos_detalle:.2f}",
+                    "cero": "0",
+                    "factura": numero_factura,
+                    "nit vendedor2": nit_vendedor,
+                    "fecha emision": fecha_emision,
+                    "factura2": numero_factura
+                }
+                descuentos.append(descuento)
             
             # Procesar inventario
             inventory_items = process_inventory_from_compra(pdf_path)
             
-            return rows, inventory_items, None  # El último None es para los descuentos
+            return rows, inventory_items, descuentos
             
     except Exception as e:
         print(f"Error procesando factura de compra: {str(e)}")
+        traceback.print_exc()
         return None, None, None
 
 # Funciones similares para los otros tipos de documentos
