@@ -1,8 +1,10 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                             QFileDialog, QLabel, QProgressDialog, QTableWidget,
                             QTableWidgetItem, QMessageBox, QTabWidget, QComboBox,
-                            QHeaderView, QDialog, QCheckBox, QProgressBar, QApplication)
+                            QHeaderView, QDialog, QCheckBox, QProgressBar, QApplication, QStyle)
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QSize
 import pandas as pd
 import os
 from PyPDF2 import PdfReader
@@ -129,17 +131,30 @@ class ValidatorTab(QWidget):
         # Panel superior
         top_panel = QHBoxLayout()
 
-        # Botón seleccionar archivos
-        self.select_btn = QPushButton('1. Seleccionar PDFs')
-        self.select_btn.clicked.connect(self.select_files)
-        self.select_btn.setStyleSheet("""
+        # Estilos comunes para los botones
+        button_style = """
             QPushButton {
-                background-color: #1a73e8;
                 color: white;
                 border: none;
                 border-radius: 4px;
-                padding: 10px 20px;
-                font-size: 14px;
+                padding: 8px 15px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                opacity: 0.8;
+            }
+            QPushButton:pressed {
+                opacity: 0.6;
+            }
+        """
+
+        # Botón seleccionar archivos
+        self.select_btn = QPushButton('1. Seleccionar PDFs')
+        self.select_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
+        self.select_btn.clicked.connect(self.select_files)
+        self.select_btn.setStyleSheet(button_style + """
+            QPushButton {
+                background-color: #2962FF;
             }
         """)
 
@@ -162,13 +177,54 @@ class ValidatorTab(QWidget):
         doc_type_layout.addWidget(self.doc_type_combo)
 
         # Botón de procesar
-        self.process_btn = QPushButton('3. Procesar Documentos')
+        self.process_btn = QPushButton('3. Procesar')
+        self.process_btn.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.process_btn.clicked.connect(self.process_files)
         self.process_btn.setEnabled(False)
+        self.process_btn.setStyleSheet(button_style + """
+            QPushButton {
+                background-color: #00C853;
+            }
+            QPushButton:disabled {
+                background-color: #A5D6A7;
+            }
+        """)
 
+        # Botón de limpiar (más pequeño)
+        self.clear_btn = QPushButton()  # Sin texto, solo ícono
+        self.clear_btn.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        self.clear_btn.setIconSize(QSize(16, 16))
+        self.clear_btn.setFixedSize(32, 32)  # Tamaño fijo más pequeño
+        self.clear_btn.setToolTip('Limpiar tabla actual')  # Tooltip para mostrar función
+        self.clear_btn.clicked.connect(self.clear_current_tab)
+        self.clear_btn.setStyleSheet(button_style + """
+            QPushButton {
+                background-color: #FF3D00;
+                padding: 5px;
+            }
+        """)
+
+        # Botón de exportar
+        self.export_btn = QPushButton('Exportar')
+        self.export_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        self.export_btn.clicked.connect(self.export_to_excel)
+        self.export_btn.setStyleSheet(button_style + """
+            QPushButton {
+                background-color: #6200EA;
+            }
+        """)
+
+        # Agregar espaciador antes de los botones de acción
+        top_panel.addStretch()
+        
+        # Agregar los botones al panel
         top_panel.addWidget(self.select_btn)
         top_panel.addWidget(doc_type_widget)
         top_panel.addWidget(self.process_btn)
+        top_panel.addSpacing(10)  # Espacio entre botones
+        top_panel.addWidget(self.clear_btn)
+        top_panel.addSpacing(10)  # Espacio entre botones
+        top_panel.addWidget(self.export_btn)
         
         layout.addLayout(top_panel)
 
@@ -721,3 +777,21 @@ class ValidatorTab(QWidget):
             data.append(row_data)
         
         return pd.DataFrame(data, columns=headers)
+
+    def clear_current_tab(self):
+        """Limpia solo la pestaña actual"""
+        current_tab = self.tab_widget.currentWidget()
+        current_tab_name = self.tab_widget.tabText(self.tab_widget.currentIndex()).lower()
+        
+        reply = QMessageBox.question(
+            self,
+            "Confirmar Limpieza",
+            f"¿Está seguro que desea limpiar los datos de la pestaña '{current_tab_name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Limpiar solo los datos de la pestaña actual
+            self.processed_data[current_tab_name] = []
+            current_tab.setRowCount(0)
