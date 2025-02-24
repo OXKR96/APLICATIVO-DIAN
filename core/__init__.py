@@ -5,7 +5,9 @@ from .pdf_processor import (
     process_facturas_gastos,
     process_nota_credito,
     process_nota_debito,
-    process_inventory
+    process_inventory,
+    get_iva_indicator,
+    process_terceros
 )
 
 __all__ = [
@@ -15,5 +17,7 @@ __all__ = [
     'process_facturas_gastos',
     'process_nota_credito',
     'process_nota_debito',
-    'process_inventory'
+    'process_inventory',
+    'get_iva_indicator',
+    'process_terceros'
 ]
