@@ -1,5 +1,6 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QStackedWidget, QHBoxLayout, QPushButton
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon
 from .download_tab import DownloadTab
 from .validator_tab import ValidatorTab
 
@@ -20,31 +21,40 @@ class MainWindow(QMainWindow):
         nav_layout.setSpacing(10)
         nav_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Botones de navegación
-        self.download_btn = QPushButton('Descargar de DIAN')
-        self.validator_btn = QPushButton('Validar Documentos')
+        # Estilo común para los botones
+        button_style = """
+            QPushButton {
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 12px;
+                min-height: 40px;
+            }
+            QPushButton[active="true"] {
+                background-color: #0056b3;
+                color: white;
+                border: none;
+            }
+            QPushButton[active="false"] {
+                background-color: #f8f9fa;
+                color: #212529;
+                border: 1px solid #dee2e6;
+            }
+            QPushButton[active="false"]:hover {
+                background-color: #e9ecef;
+            }
+            QPushButton[active="true"]:hover {
+                background-color: #004494;
+            }
+        """
         
-        # Estilo de botones
-        for btn in [self.download_btn, self.validator_btn]:
-            btn.setMinimumHeight(40)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #e1e4e8;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 5px 15px;
-                    color: #666;
-                    font-size: 14px;
-                    min-width: 150px;
-                }
-                QPushButton:hover {
-                    background-color: #d1d5da;
-                }
-                QPushButton[active="true"] {
-                    background-color: #1a73e8;
-                    color: white;
-                }
-            """)
+        # Botones de navegación
+        self.download_btn = QPushButton(" Descargar de DIAN")
+        self.download_btn.setIcon(QIcon("icons/download.png"))
+        self.download_btn.setStyleSheet(button_style)
+        
+        self.validator_btn = QPushButton(" Validar Documentos")
+        self.validator_btn.setIcon(QIcon("icons/validate.png"))
+        self.validator_btn.setStyleSheet(button_style)
         
         nav_layout.addWidget(self.download_btn)
         nav_layout.addWidget(self.validator_btn)
