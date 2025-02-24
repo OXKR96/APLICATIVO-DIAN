@@ -277,13 +277,32 @@ class ValidatorTab(QWidget):
 
     def setup_tables(self):
         """Configura las tablas para mostrar resultados"""
-        # Headers generales para la mayoría de las tablas
+        # Lista de encabezados en orden correcto
         self.column_headers = [
-            "Nombre del Vendedor", "Tipo Documento", "Prefijo", "Documento Comprador",
-            "Fecha", "Indicador IVA", "Concepto", "Cantidad", "Unidad Medida",
-            "Base Gravable", "Porcentaje IVA", "NIT", "Número Factura", "Fecha Factura",
-            "Número Control", "Total IVA", "Total INC", "Total Bolsas", "Otros Impuestos",
-            "ICUI", "Rete Fuente", "Rete IVA", "Rete ICA"
+            "Razón Social",              # A
+            "Tipo Documento",            # B
+            "Prefijo",                   # C
+            "Número Documento",          # D
+            "Fecha",                     # E
+            "Indicador IVA",             # F
+            "Concepto",                  # G
+            "Cantidad",                  # H
+            "Unidad Medida",             # I
+            "Base Gravable",             # J
+            "Porcentaje IVA",            # K
+            "NIT",                       # L
+            "Número Factura",            # M
+            "Fecha Factura",             # N
+            "Número Control",            # O
+            "Total IVA",                 # P
+            "Total INC",                 # Q
+            "Total Bolsas",              # R
+            "Otros Impuestos",           # S
+            "IBUA",                      # T
+            "ICUI",                      # U
+            "Rete Fuente",               # V
+            "Rete IVA",                  # W
+            "Rete ICA"                   # X
         ]
 
         # Headers específicos para tipos especiales
@@ -728,3 +747,29 @@ class ValidatorTab(QWidget):
             # Limpiar solo los datos de la pestaña actual
             self.processed_data[current_tab_name] = []
             current_tab.setRowCount(0)
+
+    def update_table(self, table_name, data):
+        """Actualiza la tabla con los datos procesados"""
+        if not data:
+            return
+            
+        table = self.tables[table_name]
+        table.setRowCount(len(data))
+        
+        # Imprimir para debug
+        print("\nActualizando tabla", table_name)
+        print("Número de columnas:", len(self.column_headers))
+        
+        for row_idx, row_data in enumerate(data):
+            # Debug: imprimir valores ICUI y Rete Fuente
+            print(f"\nFila {row_idx}:")
+            print(f"ICUI (U): {row_data.get('U', 'No encontrado')}")
+            print(f"Rete Fuente (V): {row_data.get('V', 'No encontrado')}")
+            
+            for col_idx, header in enumerate(self.column_headers):
+                # Convertir índice de columna a letra (0=A, 1=B, etc.)
+                col_letter = chr(65 + col_idx)
+                value = row_data.get(col_letter, '')
+                
+                item = QTableWidgetItem(str(value))
+                table.setItem(row_idx, col_idx, item)

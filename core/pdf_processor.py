@@ -211,17 +211,22 @@ def extract_total_impuestos(pdf):
                 break
         
         if datos_totales_text:
+            # Modificar los patrones para ser más específicos
             patrones = {
                 'total_iva': [r'IVA\s*[\$\s]*([0-9.,]+)'],
                 'total_inc': [r'INC\s*[\$\s]*([0-9.,]+)'],
                 'total_bolsas': [r'Bolsas\s*[\$\s]*([0-9.,]+)'],
                 'ibua': [r'IBUA\s*[\$\s]*([0-9.,]+)'],
-                'icui': [r'ICUI\s*[\$\s]*([0-9.,]+)'],
+                'icui': [r'ICUI\s*[\$\s]*([0-9.,]+)'],  # Asegurar que captura ICUI correctamente
                 'otros_impuestos': [r'Otros impuestos\s*[\$\s]*([0-9.,]+)'],
-                'rete_fuente': [r'Rete fuente\s*[\$\s]*([0-9.,]+)'],
-                'rete_iva': [r'Rete IVA\s*[\$\s]*([0-9.,]+)'],
-                'rete_ica': [r'Rete ICA\s*[\$\s]*([0-9.,]+)']
+                'rete_fuente': [r'Rete\s*fuente\s*[\$\s]*([0-9.,]+)'],  # Hacer más específico el patrón
+                'rete_iva': [r'Rete\s*IVA\s*[\$\s]*([0-9.,]+)'],
+                'rete_ica': [r'Rete\s*ICA\s*[\$\s]*([0-9.,]+)']
             }
+            
+            # Agregar debug para ver qué valores se están encontrando
+            print("\nTexto de Datos Totales:")
+            print(datos_totales_text)
             
             for impuesto, lista_patrones in patrones.items():
                 for patron in lista_patrones:
@@ -231,12 +236,16 @@ def extract_total_impuestos(pdf):
                         try:
                             valor = parse_colombian_number(valor_str)
                             impuestos[impuesto] = valor
+                            print(f"Encontrado {impuesto}: {valor}")
                             break
                         except Exception as e:
                             print(f"Error convirtiendo valor para {impuesto}: {valor_str} - {str(e)}")
+    
     except Exception as e:
         print(f"Error extrayendo impuestos: {str(e)}")
+        traceback.print_exc()
     
+    print("\nImpuestos extraídos:", impuestos)
     return impuestos
 
 def create_base_row(emisor, tipo_documento, numero_documento, fecha_emision, numero_factura, iva_percent, base_iva, impuestos, indicador_iva):
@@ -260,9 +269,9 @@ def create_base_row(emisor, tipo_documento, numero_documento, fecha_emision, num
         "P": str(impuestos['total_iva']),
         "Q": str(impuestos['total_inc']),
         "R": str(impuestos['total_bolsas']),
-        "S": str(impuestos['otros_impuestos']),  # Valor directo de Otros Impuestos
-        "T": str(impuestos['ibua']), 
-        "U": str(impuestos['icui']),            # Valor directo de IBUA
+        "S": str(impuestos['otros_impuestos']),
+        "T": str(impuestos['ibua']),
+        "U": str(impuestos['icui']),
         "V": str(impuestos['rete_fuente']),
         "W": str(impuestos['rete_iva']),
         "X": str(impuestos['rete_ica'])
@@ -373,6 +382,12 @@ def process_factura_venta(pdf_path):
                     indicador_iva=get_iva_indicator(iva_percent)
                 )
                 rows.append(new_row)
+            
+            # Antes de retornar las filas, imprimir para debug
+            for row in rows:
+                print("\nValores en la fila:")
+                print(f"ICUI: {row['U']}")
+                print(f"Rete Fuente: {row['V']}")
             
             return rows
             
