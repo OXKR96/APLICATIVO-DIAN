@@ -527,6 +527,22 @@ class ValidatorTab(QWidget):
                             self.processed_data[key].extend(rows)
                             processed += 1
                             self.update_single_table(key)
+                    elif doc_type in ['Nota Crédito', 'Nota Débito']:
+                        result = processor(filepath)
+                        if isinstance(result, dict):  # Si es un error
+                            errors += 1
+                            self.processed_data['errores'].append({
+                                'Número Factura': result['numero_factura'],
+                                'Nombre Documento': os.path.basename(filepath),
+                                'Error': "Precio unitario mayor que precio de venta"
+                            })
+                            self.update_single_table('errores')
+                        elif result:  # Si no hay error, procesar normalmente
+                            key = self.type_to_key.get(doc_type)
+                            if key:
+                                self.processed_data[key].extend(result)
+                                processed += 1
+                                self.update_single_table(key)
                     else:
                         rows = processor(filepath)
                         if rows:

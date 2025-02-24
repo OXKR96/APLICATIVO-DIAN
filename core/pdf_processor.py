@@ -558,19 +558,28 @@ def process_nota_credito(pdf_path):
                 tables = page.extract_tables()
                 for table in tables:
                     for row in table:
-                        if not row or len(row) < 11:
+                        if not row or len(row) < 10:
                             continue
-                        
+                            
                         row = [str(cell).strip() if cell is not None else '' for cell in row]
                         if row[0].strip().isdigit():
+                            precio_unitario = parse_colombian_number(row[5])
+                            precio_venta = parse_colombian_number(row[12])
+
+                            # Agregar validación de precios
+                            if precio_unitario > precio_venta:
+                                error_msg = {
+                                    'numero_factura': numero_factura,
+                                    'detalle': "Precio unitario mayor que precio de venta"
+                                }
+                                return error_msg
+
                             try:
                                 # Extraer valores de la fila
-                                precio_unitario = parse_colombian_number(row[5])
                                 cantidad = parse_colombian_number(row[4])
                                 descuento = parse_colombian_number(row[6]) if row[6].strip() else 0.0
                                 iva_pesos = parse_colombian_number(row[8]) if row[8].strip() else 0.0
                                 iva_percent = float(row[9].replace(',', '.')) if row[9].strip() else 0.0
-                                precio_unitario_venta = parse_colombian_number(row[12])
                                 
                                 # Calcular base gravable
                                 base_gravable = calcular_base_gravable(
@@ -578,7 +587,7 @@ def process_nota_credito(pdf_path):
                                     cantidad, 
                                     descuento, 
                                     iva_pesos, 
-                                    precio_unitario_venta
+                                    precio_venta
                                 )
                                 
                                 # Agrupar por porcentaje de IVA
@@ -640,14 +649,24 @@ def process_nota_debito(pdf_path):
                 tables = page.extract_tables()
                 for table in tables:
                     for row in table:
-                        if not row or len(row) < 11:
+                        if not row or len(row) < 10:
                             continue
                         
                         row = [str(cell).strip() if cell is not None else '' for cell in row]
                         if row[0].strip().isdigit():
+                            precio_unitario = parse_colombian_number(row[5])
+                            precio_venta = parse_colombian_number(row[12])
+
+                            # Agregar validación de precios
+                            if precio_unitario > precio_venta:
+                                error_msg = {
+                                    'numero_factura': numero_factura,
+                                    'detalle': "Precio unitario mayor que precio de venta"
+                                }
+                                return error_msg
+
                             try:
                                 # Extraer valores de la fila
-                                precio_unitario = parse_colombian_number(row[5])
                                 cantidad = parse_colombian_number(row[4])
                                 descuento = parse_colombian_number(row[6]) if row[6].strip() else 0.0
                                 iva_pesos = parse_colombian_number(row[8]) if row[8].strip() else 0.0
