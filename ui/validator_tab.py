@@ -80,8 +80,7 @@ class ValidatorTab(QWidget):
             'Factura de Compra': process_factura_compra,
             'Nota Crédito': process_nota_credito,
             'Nota Débito': process_nota_debito,
-            'Terceros': process_terceros,
-            'Facturas de Gastos': process_facturas_gastos
+            'Terceros': process_terceros
         }
         
         self.type_to_key = {
@@ -89,8 +88,7 @@ class ValidatorTab(QWidget):
             'Factura de Compra': 'compra',
             'Nota Crédito': 'credito',
             'Nota Débito': 'debito',
-            'Terceros': 'terceros',
-            'Facturas de Gastos': 'gastos'
+            'Terceros': 'terceros'
         }
 
     def setup_data_containers(self):
@@ -100,11 +98,10 @@ class ValidatorTab(QWidget):
             'compra': [],
             'credito': [],
             'debito': [],
-            'errores': [],
             'inventario': [],
             'descuentos': [],
             'terceros': [],
-            'gastos': []
+            'errores': []  # Movido al final
         }
 
     def setup_ui(self):
@@ -169,8 +166,7 @@ class ValidatorTab(QWidget):
             'Factura de Compra',
             'Nota Crédito',
             'Nota Débito',
-            'Terceros',
-            'Facturas de Gastos'
+            'Terceros'
         ])
 
         doc_type_layout.addWidget(doc_type_label)
@@ -281,178 +277,59 @@ class ValidatorTab(QWidget):
 
     def setup_tables(self):
         """Configura las tablas para mostrar resultados"""
-        self.column_headers = {
-            'venta': [
-                "Nombre del Vendedor",
-                "Tipo Documento",
-                "Prefijo",
-                "Documento Comprador",
-                "Fecha",
-                "Indicador IVA",
-                "Concepto",
-                "Cantidad",
-                "Unidad Medida",
-                "Base Gravable",
-                "Porcentaje IVA",
-                "NIT",
-                "Número Factura",
-                "Fecha Factura",
-                "Número Control",
-                "Total IVA",
-                "Total INC",
-                "Total Bolsas",
-                "Otros Impuestos",
-                "ICUI",
-                "Rete Fuente",
-                "Rete IVA",
-                "Rete ICA"
-            ],
-            'compra': [
-                "Nombre del Comprador",
-                "Tipo Documento",
-                "Prefijo",
-                "Documento Comprador",
-                "Fecha",
-                "Indicador IVA",
-                "Concepto",
-                "Cantidad",
-                "Unidad Medida",
-                "Base Gravable",
-                "Porcentaje IVA",
-                "NIT",
-                "Número Factura",
-                "Fecha Factura",
-                "Número Control",
-                "Total IVA",
-                "Total INC",
-                "Total Bolsas",
-                "Otros Impuestos",
-                "ICUI",
-                "Rete Fuente",
-                "Rete IVA",
-                "Rete ICA"
-            ],
-            'credito': [
-                "Nombre del Vendedor",
-                "Tipo Documento",
-                "Prefijo",
-                "Documento Comprador",
-                "Fecha",
-                "Indicador IVA",
-                "Concepto",
-                "Cantidad",
-                "Unidad Medida",
-                "Base Gravable",
-                "Porcentaje IVA",
-                "NIT",
-                "Número Factura",
-                "Fecha Factura",
-                "Número Control",
-                "Total IVA",
-                "Total INC",
-                "Total Bolsas",
-                "Otros Impuestos",
-                "ICUI",
-                "Rete Fuente",
-                "Rete IVA",
-                "Rete ICA"
-            ],
-            'debito': [
-                "Nombre del Vendedor",
-                "Tipo Documento",
-                "Prefijo",
-                "Documento Comprador",
-                "Fecha",
-                "Indicador IVA",
-                "Concepto",
-                "Cantidad",
-                "Unidad Medida",
-                "Base Gravable",
-                "Porcentaje IVA",
-                "NIT",
-                "Número Factura",
-                "Fecha Factura",
-                "Número Control",
-                "Total IVA",
-                "Total INC",
-                "Total Bolsas",
-                "Otros Impuestos",
-                "ICUI",
-                "Rete Fuente",
-                "Rete IVA",
-                "Rete ICA"
-            ],
-            'terceros': [
-                "Razón Social",
-                "Nombre Comercial",
-                "NIT del Emisor",
-                "Tipo de Contribuyente",
-                "Responsabilidad Tributaria",
-                "Régimen Fiscal",
-                "Actividad Económica",
-                "Dirección",
-                "Teléfono/Móvil",
-                "Correo",
-                "País",
-                "Departamento",
-                "Municipio"
-            ],
+        # Headers generales para la mayoría de las tablas
+        self.column_headers = [
+            "Nombre del Vendedor", "Tipo Documento", "Prefijo", "Documento Comprador",
+            "Fecha", "Indicador IVA", "Concepto", "Cantidad", "Unidad Medida",
+            "Base Gravable", "Porcentaje IVA", "NIT", "Número Factura", "Fecha Factura",
+            "Número Control", "Total IVA", "Total INC", "Total Bolsas", "Otros Impuestos",
+            "ICUI", "Rete Fuente", "Rete IVA", "Rete ICA"
+        ]
+
+        # Headers específicos para tipos especiales
+        self.special_headers = {
             'inventario': [
-                "NIT Comprador",
-                "Nombre Comprador",
-                "NIT Vendedor", 
-                "Forma Pago",
-                "Número Factura",
-                "Nro",
-                "Codigo",
-                "Descripcion",
-                "U/M",
-                "Cantidad",
-                "Precio_unitario",
-                "Descuento",
-                "Recargo",
-                "IVA",
-                "Porcentaje_IVA",
-                "INC",
-                "Porcentaje_INC",
-                "Precio_venta",
-                "Base_gravable"
+                "NIT Comprador", "Nombre Comprador", "NIT Vendedor", "Forma Pago",
+                "Número Factura", "Nro", "Codigo", "Descripcion", "U/M", "Cantidad",
+                "Precio_unitario", "Descuento", "Recargo", "IVA", "Porcentaje_IVA",
+                "INC", "Porcentaje_INC", "Precio_venta", "Base_gravable"
             ],
             'descuentos': [
-                "datos del comprador",
-                "tipo de factura",
-                "en blanco",
-                "nit vendedor",
-                "Fecha de Emisión",
-                "tipo de descuento",
-                "suma de descuentos",
-                "cero",
-                "factura",
-                "nit vendedor2",
-                "fecha emision",
-                "factura2"
+                "datos del comprador", "tipo de factura", "en blanco", "nit vendedor",
+                "Fecha de Emisión", "tipo de descuento", "suma de descuentos", "cero",
+                "factura", "nit vendedor2", "fecha emision", "factura2"
+            ],
+            'terceros': [
+                "Razón Social", "Nombre Comercial", "NIT del Emisor", "Tipo de Contribuyente",
+                "Responsabilidad Tributaria", "Régimen Fiscal", "Actividad Económica",
+                "Dirección", "Teléfono/Móvil", "Correo", "País", "Departamento", "Municipio"
             ]
         }
 
-        self.tables = {
-            'venta': QTableWidget(),
-            'compra': QTableWidget(),
-            'credito': QTableWidget(),
-            'debito': QTableWidget(),
-            'errores': QTableWidget(),
-            'inventario': QTableWidget(),
-            'descuentos': QTableWidget(),
-            'terceros': QTableWidget(),
-            'gastos': QTableWidget()
-        }
+        # Definir el orden específico de las pestañas
+        tab_order = [
+            'venta',
+            'compra',
+            'credito',
+            'debito',
+            'inventario',
+            'descuentos',
+            'terceros',
+            'errores'  # Errores al final
+        ]
 
-        # Configurar cada tabla con sus encabezados específicos
-        for name, table in self.tables.items():
-            headers = self.column_headers.get(name, self.column_headers['venta'])  # usar headers de venta por defecto
+        # Crear las tablas en el orden deseado
+        self.tables = {}
+        for tab_name in tab_order:
+            self.tables[tab_name] = QTableWidget()
+            table = self.tables[tab_name]
+            
+            # Usar headers específicos para tipos especiales
+            headers = self.special_headers.get(tab_name, self.column_headers)
             table.setColumnCount(len(headers))
             table.setHorizontalHeaderLabels(headers)
             
-            # Otras configuraciones de la tabla
+            # Configuraciones de la tabla
             table.setSelectionBehavior(QTableWidget.SelectRows)
             table.setAlternatingRowColors(True)
             
@@ -460,7 +337,7 @@ class ValidatorTab(QWidget):
             header.setSectionResizeMode(QHeaderView.ResizeToContents)
             header.setStretchLastSection(True)
             
-            # Estilo para la tabla y encabezados
+            # Estilo para la tabla
             table.setStyleSheet("""
                 QTableWidget {
                     gridline-color: #ccc;
@@ -476,7 +353,8 @@ class ValidatorTab(QWidget):
                 }
             """)
             
-            self.tab_widget.addTab(table, name.capitalize())
+            # Agregar la tabla al tab_widget en el orden especificado
+            self.tab_widget.addTab(table, tab_name.capitalize())
 
     def select_files(self):
         """Permite al usuario seleccionar archivos PDF"""
@@ -688,27 +566,23 @@ class ValidatorTab(QWidget):
             # Configurar el número de filas
             table.setRowCount(len(data_list))
             
-            # Obtener los headers correctos para este tipo
-            headers = self.column_headers.get(data_type, self.column_headers['venta'])
+            # Usar los headers correctos según el tipo
+            headers = self.special_headers.get(data_type, self.column_headers)
             
             # Llenar la tabla según el tipo
             for row_idx, row_data in enumerate(data_list):
                 if data_type in ['terceros', 'inventario', 'descuentos']:
-                    # Para terceros, inventario y descuentos usamos los nombres de las columnas
                     for col_idx, header in enumerate(headers):
                         value = str(row_data.get(header, ''))
                         item = QTableWidgetItem(value)
                         table.setItem(row_idx, col_idx, item)
                 else:
-                    # Para otros tipos verificamos si row_data es lista o diccionario
                     if isinstance(row_data, list):
-                        # Si es lista, usamos el índice
                         for col_idx, _ in enumerate(headers):
                             value = str(row_data[col_idx] if col_idx < len(row_data) else '')
                             item = QTableWidgetItem(value)
                             table.setItem(row_idx, col_idx, item)
                     else:
-                        # Si es diccionario, usamos las letras como antes
                         for col_idx, _ in enumerate(headers):
                             letra = chr(65 + col_idx)
                             value = str(row_data.get(letra, ''))
