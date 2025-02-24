@@ -492,7 +492,15 @@ class ValidatorTab(QWidget):
                             self.update_single_table('venta')
                     elif doc_type == 'Factura de Compra':
                         result = processor(filepath)
-                        if result:
+                        if isinstance(result, dict):  # Si es un error
+                            errors += 1
+                            self.processed_data['errores'].append({
+                                'Número Factura': result['numero_factura'],
+                                'Nombre Documento': os.path.basename(filepath),
+                                'Error': "Precio unitario mayor que precio de venta"
+                            })
+                            self.update_single_table('errores')
+                        elif result:  # Si no hay error, procesar normalmente
                             rows, inventario, descuentos = result if len(result) == 3 else (result, None, None)
                             if rows:
                                 self.processed_data['compra'].extend(rows)

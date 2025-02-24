@@ -437,7 +437,15 @@ def process_factura_compra(pdf_path):
                                 iva_pesos = parse_colombian_number(row[8])
                                 iva_percent = float(row[9].replace(',', '.')) if row[9].strip() else 0.0
                                 precio_venta = parse_colombian_number(row[12])
-                                
+
+                                # Agregar validación de precios aquí
+                                if precio_unitario > precio_venta:
+                                    error_msg = {
+                                        'numero_factura': numero_factura,
+                                        'detalle': "Precio unitario mayor que precio de venta"
+                                    }
+                                    return error_msg
+
                                 # Calcular base gravable
                                 base_gravable = calcular_base_gravable(
                                     precio_unitario, 
